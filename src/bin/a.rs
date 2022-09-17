@@ -64,7 +64,9 @@ macro_rules! mat {
 }
 
 #[derive(Debug, Clone)]
-struct Input {}
+struct Input {
+
+}
 
 fn main() {
     let v = Vec2::new(0, 0);
@@ -84,13 +86,17 @@ mod vector {
             Self { x, y }
         }
 
-        pub const fn in_map(&self, n: usize) -> bool {
+        pub fn in_map(&self, n: usize) -> bool {
             let n = n as u32;
             (self.x as u32) < n && (self.y as u32) < n
         }
 
         pub const fn rot90(&self) -> Self {
             Self::new(-self.y, self.x)
+        }
+
+        pub fn unit(&self) -> Self {
+            Self::new(self.x.signum(), self.y.signum())
         }
     }
 
@@ -126,7 +132,7 @@ mod vector {
 
     impl std::fmt::Display for Vec2 {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "({} {})", self.x, self.y)
+            write!(f, "({}, {})", self.x, self.y)
         }
     }
 
@@ -148,4 +154,8 @@ mod vector {
         Vec2::new(0, -1),
         Vec2::new(1, -1),
     ];
+
+    pub const fn inv(dir: usize) -> usize {
+        dir ^ 4
+    }
 }
