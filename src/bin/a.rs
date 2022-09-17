@@ -64,9 +64,7 @@ macro_rules! mat {
 }
 
 #[derive(Debug, Clone)]
-struct Input {
-
-}
+struct Input {}
 
 fn main() {
     let v = Vec2::new(0, 0);
@@ -157,5 +155,84 @@ mod vector {
 
     pub const fn inv(dir: usize) -> usize {
         dir ^ 4
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct Map2d<T> {
+        pub width: usize,
+        pub height: usize,
+        map: Vec<T>,
+    }
+
+    impl<T> Map2d<T> {
+        pub fn new(map: Vec<T>, width: usize) -> Self {
+            let height = map.len() / width;
+            debug_assert!(width * height == map.len());
+            Self { width, height, map }
+        }
+    }
+
+    impl<T> std::ops::Index<Vec2> for Map2d<T> {
+        type Output = T;
+
+        #[inline]
+        fn index(&self, v: Vec2) -> &Self::Output {
+            let x = v.x as usize;
+            let y = v.y as usize;
+            debug_assert!(x < self.width && y < self.width);
+            &self.map[y * self.width + x]
+        }
+    }
+
+    impl<T> std::ops::IndexMut<Vec2> for Map2d<T> {
+        #[inline]
+        fn index_mut(&mut self, v: Vec2) -> &mut Self::Output {
+            let x = v.x as usize;
+            let y = v.y as usize;
+            debug_assert!(x < self.width && y < self.width);
+            &mut self.map[y * self.width + x]
+        }
+    }
+
+    impl<T> std::ops::Index<&Vec2> for Map2d<T> {
+        type Output = T;
+
+        #[inline]
+        fn index(&self, v: &Vec2) -> &Self::Output {
+            let x = v.x as usize;
+            let y = v.y as usize;
+            debug_assert!(x < self.width && y < self.width);
+            &self.map[y * self.width + x]
+        }
+    }
+
+    impl<T> std::ops::IndexMut<&Vec2> for Map2d<T> {
+        #[inline]
+        fn index_mut(&mut self, v: &Vec2) -> &mut Self::Output {
+            let x = v.x as usize;
+            let y = v.y as usize;
+            debug_assert!(x < self.width && y < self.width);
+            &mut self.map[y * self.width + x]
+        }
+    }
+
+    impl<T> std::ops::Index<usize> for Map2d<T> {
+        type Output = [T];
+
+        #[inline]
+        fn index(&self, row: usize) -> &Self::Output {
+            let begin = row * self.width;
+            let end = begin + self.width;
+            &self.map[begin..end]
+        }
+    }
+
+    impl<T> std::ops::IndexMut<usize> for Map2d<T> {
+        #[inline]
+        fn index_mut(&mut self, row: usize) -> &mut Self::Output {
+            let begin = row * self.width;
+            let end = begin + self.width;
+            &mut self.map[begin..end]
+        }
     }
 }
