@@ -66,6 +66,17 @@ macro_rules! mat {
     ($e:expr; $d:expr $(; $ds:expr)+) => { vec![mat![$e $(; $ds)*]; $d] };
 }
 
+#[allow(unused_macros)]
+macro_rules! skip_none {
+    ($res:expr) => {
+        if let Some(v) = $res {
+            v
+        } else {
+            continue;
+        }
+    };
+}
+
 #[derive(Debug, Clone)]
 struct Input {
     n: usize,
@@ -248,31 +259,10 @@ fn greedy(input: &Input) -> Output {
                 }
 
                 for dir in 0..8 {
-                    let p1 = search(input, &state, p0, dir);
-                    if p1.is_none() {
-                        continue;
-                    }
-
-                    let p2 = search(input, &state, p0, rot_c(dir));
-                    if p2.is_none() {
-                        continue;
-                    }
-
-                    let p1 = p1.unwrap();
-                    let p2 = p2.unwrap();
-
-                    let p13 = search(input, &state, p1, rot_c(dir));
-                    if p13.is_none() {
-                        continue;
-                    }
-
-                    let p23 = search(input, &state, p2, dir);
-                    if p23.is_none() {
-                        continue;
-                    }
-
-                    let p13 = p13.unwrap();
-                    let p23 = p23.unwrap();
+                    let p1 = skip_none!(search(input, &state, p0, dir));
+                    let p2 = skip_none!(search(input, &state, p0, rot_c(dir)));
+                    let p13 = skip_none!(search(input, &state, p1, rot_c(dir)));
+                    let p23 = skip_none!(search(input, &state, p2, dir));
 
                     if p13 != p23 {
                         continue;
