@@ -77,6 +77,131 @@ macro_rules! skip_none {
     };
 }
 
+mod bitboard {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Bitset {
+        v: u64,
+    }
+
+    impl Bitset {
+        #[inline]
+        pub const fn new(v: u64) -> Self {
+            Self { v }
+        }
+
+        #[inline]
+        pub fn set(&mut self, i: u32) {
+            debug_assert!(((self.v >> i) & 1) == 0);
+            self.v ^= 1 << i;
+        }
+
+        #[inline]
+        pub fn unset(&mut self, i: u32) {
+            debug_assert!(((self.v >> i) & 1) > 0);
+            self.v ^= 1 << i;
+        }
+
+        #[inline]
+        pub fn find_next(&self, begin: u32) -> Option<u32> {
+            let v = self.v >> begin;
+            if v == 0 {
+                None
+            } else {
+                let tz = v.trailing_zeros();
+                Some(begin + tz)
+            }
+        }
+
+        #[inline]
+        pub fn contains_range(&self, begin: u32, end: u32) -> bool {
+            (self.v & Self::get_range_mask(begin, end)) > 0
+        }
+
+        #[inline]
+        pub fn set_range(&mut self, begin: u32, end: u32) {
+            debug_assert!(!self.contains_range(begin, end));
+            self.v ^= Self::get_range_mask(begin, end);
+        }
+
+        #[inline]
+        pub fn unset_range(&mut self, begin: u32, end: u32) {
+            let mask = Self::get_range_mask(begin, end);
+            debug_assert!((self.v & mask) == mask);
+            self.v ^= mask;
+        }
+
+        #[inline]
+        fn get_range_mask(begin: u32, end: u32) -> u64 {
+            debug_assert!(end >= begin);
+            ((1 << end) - 1) ^ ((1 << begin) - 1)
+        }
+    }
+
+    impl std::fmt::Display for Bitset {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{:b}", self.v)
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use super::Bitset;
+
+        #[test]
+        fn set() {
+            let mut b = Bitset::new(1);
+            b.set(1);
+            assert_eq!(b.v, 3);
+        }
+
+        #[test]
+        fn unset() {
+            let mut b = Bitset::new(3);
+            b.unset(1);
+            assert_eq!(b.v, 1);
+        }
+
+        #[test]
+        fn find_next() {
+            find_next_inner(1, 1, None);
+            find_next_inner(1, 0, Some(0));
+            find_next_inner(12, 1, Some(2));
+        }
+
+        fn find_next_inner(v: u64, begin: u32, expected: Option<u32>) {
+            let actual = Bitset::new(v).find_next(begin);
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn contains_range() {
+            contains_range_inner(7, 0, 0, false);
+            contains_range_inner(7, 0, 1, true);
+            contains_range_inner(5, 1, 2, false);
+            contains_range_inner(5, 1, 3, true);
+        }
+
+        fn contains_range_inner(v: u64, begin: u32, end: u32, expected: bool) {
+            let actual = Bitset::new(v).contains_range(begin, end);
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn set_range() {
+            let mut b = Bitset::new(1);
+            b.set_range(2, 4);
+            assert_eq!(b.v, 13);
+        }
+
+        #[test]
+        fn unset_range() {
+            let mut b = Bitset::new(13);
+            b.unset_range(2, 4);
+            assert_eq!(b.v, 1);
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Input {
     n: usize,
