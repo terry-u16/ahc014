@@ -393,6 +393,7 @@ struct State {
     points: Vec<Vec2>,
     board: Board,
     rectangles: Vec<[Vec2; 4]>,
+    score: i32,
 }
 
 impl State {
@@ -401,17 +402,21 @@ impl State {
         let board = Board::init(input.n, &input.p);
         let rectangles = vec![];
 
+        let score = points.iter().map(|p| input.get_weight(*p)).sum();
+
         Self {
             points,
             board,
             rectangles,
+            score,
         }
     }
 
-    fn apply(&mut self, rectangle: &[Vec2; 4]) {
+    fn apply(&mut self, input: &Input, rectangle: &[Vec2; 4]) {
         self.points.push(rectangle[0]);
         self.board.add_point(rectangle[0]);
         self.rectangles.push(rectangle.clone());
+        self.score += input.get_weight(rectangle[0]);
 
         for (i, &from) in rectangle.iter().enumerate() {
             let to = rectangle[(i + 1) % 4];
@@ -419,10 +424,11 @@ impl State {
         }
     }
 
-    fn revert(&mut self) {
+    fn revert(&mut self, input: &Input) {
         let rectangle = self.rectangles.pop().unwrap();
         self.points.pop();
         self.board.remove_point(rectangle[0]);
+        self.score -= input.get_weight(rectangle[0]);
 
         for (i, &from) in rectangle.iter().enumerate() {
             let to = rectangle[(i + 1) % 4];
@@ -430,14 +436,8 @@ impl State {
         }
     }
 
-    fn calc_score(&self, input: &Input) -> i32 {
-        let mut total_weight = 0;
-
-        for &p in self.points.iter() {
-            total_weight += input.get_weight(p);
-        }
-
-        (total_weight as f64 * input.score_coef).round() as i32
+    fn calc_normalized_score(&self, input: &Input) -> i32 {
+        (self.score as f64 * input.score_coef).round() as i32
     }
 
     fn to_output(&self) -> Output {
@@ -476,8 +476,8 @@ impl std::fmt::Display for Output {
 fn main() {
     let input = Input::read();
     let output = greedy(&input);
+    eprintln!("Elapsed: {}ms", (Instant::now() - input.since).as_millis());
     println!("{}", output);
-    eprintln!("Elapsed: {}ms", (Instant::now() - input.since).as_millis())
 }
 
 fn greedy(input: &Input) -> Output {
@@ -515,12 +515,13 @@ fn greedy(input: &Input) -> Output {
         }
 
         if let Some(rect) = best_rectangle {
-            state.apply(&rect);
+            state.apply(input, &rect);
         } else {
             break;
         }
     }
 
+    eprintln!("score: {}", state.calc_normalized_score(input));
     state.to_output()
 }
 
