@@ -510,8 +510,8 @@ fn greedy(input: &Input) -> Output {
                             continue;
                         }
 
-                        let weight = input.get_weight(p0);
-                        candidates.push((weight, [p0, p1, p13, p2]));
+                        let weight = input.get_weight(p0) as i64;
+                        candidates.push((weight * weight * weight, [p0, p1, p13, p2]));
                     }
                 }
             }
