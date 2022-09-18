@@ -1,0 +1,55 @@
+{
+  "ProblemOption": {
+    "ProblemName": "ahc014",
+    "TimeLimit": "00:00:05"
+  },
+  "RunnerOption": {
+    "StartSeed": 0,
+    "EndSeed": 100,
+    "ReferenceScore": 1000000,
+    "LocalParallelCount": 32,
+    "CloudParallelCount": 300,
+    "SummaryFilePath": ".\\data\\score_history.txt"
+  },
+  "ExecutionOption": {
+    "ScoreRegex": "Score = (?<score>\\d+)",
+    "SeedFormat": "0000",
+    "Timeout": "00:00:50",
+    "LocalExecutionSteps": [
+      {
+        "ExecutionCommand": "ahc014-a.exe",
+        "StdInPath": "in/{SEED}.txt",
+        "StdOutPath": null,
+        "StdErrorPath": null
+      }
+    ],
+    "CloudExecutionSteps": [
+      {
+        "ExecutionCommand": "main",
+        "StdInPath": "in/{SEED}.txt",
+        "StdOutPath": "out.txt",
+        "StdErrorPath": null
+      },
+      {
+        "ExecutionCommand": "vis in/{SEED}.txt out.txt",
+        "StdInPath": null,
+        "StdOutPath": null,
+        "StdErrorPath": null
+      }
+    ],
+    "Files": [
+      "main",
+      "vis",
+      "in/{SEED}.txt"
+    ]
+  },
+  "CompileOption": {
+    "ExeName": "main",
+    "Files": [
+      {
+        "Source": "src/bin/a.rs",
+        "Destination": "src/bin/main.rs"
+      }
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "isRoot": true,
+  "tools": {
+    "terryu16.marathonrunner.console": {
+      "version": "1.0.1",
+      "commands": [
+        "marathon"
+      ]
+    }
+  }
+}
