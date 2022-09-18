@@ -78,7 +78,9 @@ macro_rules! skip_none {
 }
 
 mod bitboard {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    use crate::vector::{Vec2, DIR_COUNT, UNITS};
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     pub struct Bitset {
         v: u64,
     }
@@ -87,6 +89,11 @@ mod bitboard {
         #[inline]
         pub const fn new(v: u64) -> Self {
             Self { v }
+        }
+
+        #[inline]
+        pub fn at(&self, i: u32) -> bool {
+            ((self.v >> i) & 1) > 0
         }
 
         #[inline]
@@ -140,6 +147,117 @@ mod bitboard {
     impl std::fmt::Display for Bitset {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(f, "{:b}", self.v)
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct Board {
+        n: usize,
+        points: [Vec<Bitset>; DIR_COUNT],
+        edges: [Vec<Bitset>; DIR_COUNT],
+    }
+
+    impl Board {
+        pub fn init(n: usize, init_points: &[Vec2]) -> Self {
+            let mut points = [
+                vec![Bitset::default(); n],
+                vec![Bitset::default(); 2 * n - 1],
+                vec![Bitset::default(); n],
+                vec![Bitset::default(); 2 * n - 1],
+                vec![Bitset::default(); n],
+                vec![Bitset::default(); 2 * n - 1],
+                vec![Bitset::default(); n],
+                vec![Bitset::default(); 2 * n - 1],
+            ];
+            let edges = points.clone();
+
+            for p in init_points.iter() {
+                for (dir, points) in points.iter_mut().enumerate() {
+                    let p = p.rot(dir, n);
+                    points[p.y as usize].set(p.x as u32);
+                }
+            }
+
+            Self { n, points, edges }
+        }
+
+        pub fn find_next(&self, v: Vec2, dir: usize) -> Option<Vec2> {
+            let v_rot = v.rot(dir, self.n);
+            let next = self.points[dir][v_rot.y as usize].find_next(v_rot.x as u32 + 1);
+
+            if let Some(next) = next {
+                let unit = UNITS[dir];
+                let d = next as i32 - v_rot.x;
+                let next = v + unit * d;
+                Some(next)
+            } else {
+                None
+            }
+        }
+
+        #[inline]
+        pub fn is_occupied(&self, v1: Vec2) -> bool {
+            self.points[0][v1.y as usize].at(v1.x as u32)
+        }
+
+        #[inline]
+        pub fn can_connect(&self, v1: Vec2, v2: Vec2) -> bool {
+            let (dir, y, x1, x2) = self.get_rot(v1, v2);
+            let has_point = self.points[dir][y].contains_range(x1 + 1, x2);
+            let has_edge = self.points[dir][y].contains_range(x1, x2);
+            !has_point && !has_edge
+        }
+
+        pub fn add_point(&mut self, v: Vec2) {
+            for dir in 0..DIR_COUNT {
+                let v = v.rot(dir, self.n);
+                self.points[dir][v.y as usize].set(v.x as u32);
+            }
+        }
+
+        pub fn remove_point(&mut self, v: Vec2) {
+            for dir in 0..DIR_COUNT {
+                let v = v.rot(dir, self.n);
+                self.points[dir][v.y as usize].unset(v.x as u32);
+            }
+        }
+
+        #[inline]
+        pub fn connect(&mut self, v1: Vec2, v2: Vec2) {
+            self.connect_inner(v1, v2);
+            self.connect_inner(v2, v1);
+        }
+
+        #[inline]
+        pub fn disconnect(&mut self, v1: Vec2, v2: Vec2) {
+            self.disconnect_inner(v1, v2);
+            self.disconnect_inner(v2, v1);
+        }
+
+        #[inline]
+        fn connect_inner(&mut self, v1: Vec2, v2: Vec2) {
+            let (dir, y, x1, x2) = self.get_rot(v1, v2);
+            self.edges[dir][y].set_range(x1, x2);
+        }
+
+        #[inline]
+        fn disconnect_inner(&mut self, v1: Vec2, v2: Vec2) {
+            let (dir, y, x1, x2) = self.get_rot(v1, v2);
+            self.edges[dir][y].unset_range(x1, x2);
+        }
+
+        #[inline]
+        fn get_rot(&self, v1: Vec2, v2: Vec2) -> (usize, usize, u32, u32) {
+            let dir = (v2 - v1).unit().to_dir();
+            let v1_rot = v1.rot(dir, self.n);
+            let v2_rot = v2.rot(dir, self.n);
+
+            debug_assert!(v1_rot.y == v2_rot.y);
+            let y = v1_rot.y as usize;
+            let x1 = v1_rot.x as u32;
+            let x2 = v2_rot.x as u32;
+
+            (dir, y, x1, x2)
         }
     }
 
@@ -446,6 +564,7 @@ mod vector {
             (self.x as u32) < n && (self.y as u32) < n
         }
 
+        #[inline]
         pub fn rot(&self, dir: usize, n: usize) -> Self {
             let mut v = *self;
             let n = n as i32;
@@ -557,6 +676,8 @@ mod vector {
         Vec2::new(0, -1),
         Vec2::new(1, -1),
     ];
+
+    pub const DIR_COUNT: usize = 8;
 
     pub const fn inv(dir: usize) -> usize {
         dir ^ 4
