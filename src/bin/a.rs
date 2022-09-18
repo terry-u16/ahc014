@@ -335,6 +335,7 @@ struct Input {
     m: usize,
     p: Vec<Vec2>,
     score_coef: f64,
+    since: Instant,
 }
 
 impl Input {
@@ -355,12 +356,14 @@ impl Input {
         }
 
         let score_coef = 1e6 * (n * n) as f64 / m as f64;
+        let since = Instant::now();
 
         let mut input = Input {
             n,
             m,
             p,
             score_coef,
+            since,
         };
 
         let mut total_weight = 0;
@@ -463,13 +466,13 @@ fn main() {
     let input = Input::read();
     let output = greedy(&input);
     println!("{}", output);
+    eprintln!("Elapsed: {}ms", (Instant::now() - input.since).as_millis())
 }
 
 fn greedy(input: &Input) -> Output {
     let mut state = State::init(input);
-    let since = Instant::now();
 
-    while (Instant::now() - since).as_millis() < 4900 {
+    while (Instant::now() - input.since).as_millis() < 4900 {
         let mut best_rectangle = None;
         let mut best_weight = 0;
 
