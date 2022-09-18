@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+use bitboard::Board;
 #[allow(unused_imports)]
 use proconio::*;
 #[allow(unused_imports)]
@@ -81,35 +82,35 @@ mod bitboard {
     use crate::vector::{Vec2, DIR_COUNT, UNITS};
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-    pub struct Bitset {
+    struct Bitset {
         v: u64,
     }
 
     impl Bitset {
         #[inline]
-        pub const fn new(v: u64) -> Self {
+        const fn new(v: u64) -> Self {
             Self { v }
         }
 
         #[inline]
-        pub fn at(&self, i: u32) -> bool {
+        fn at(&self, i: u32) -> bool {
             ((self.v >> i) & 1) > 0
         }
 
         #[inline]
-        pub fn set(&mut self, i: u32) {
+        fn set(&mut self, i: u32) {
             debug_assert!(((self.v >> i) & 1) == 0);
             self.v ^= 1 << i;
         }
 
         #[inline]
-        pub fn unset(&mut self, i: u32) {
+        fn unset(&mut self, i: u32) {
             debug_assert!(((self.v >> i) & 1) > 0);
             self.v ^= 1 << i;
         }
 
         #[inline]
-        pub fn find_next(&self, begin: u32) -> Option<u32> {
+        fn find_next(&self, begin: u32) -> Option<u32> {
             let v = self.v >> begin;
             if v == 0 {
                 None
@@ -120,18 +121,18 @@ mod bitboard {
         }
 
         #[inline]
-        pub fn contains_range(&self, begin: u32, end: u32) -> bool {
+        fn contains_range(&self, begin: u32, end: u32) -> bool {
             (self.v & Self::get_range_mask(begin, end)) > 0
         }
 
         #[inline]
-        pub fn set_range(&mut self, begin: u32, end: u32) {
+        fn set_range(&mut self, begin: u32, end: u32) {
             debug_assert!(!self.contains_range(begin, end));
             self.v ^= Self::get_range_mask(begin, end);
         }
 
         #[inline]
-        pub fn unset_range(&mut self, begin: u32, end: u32) {
+        fn unset_range(&mut self, begin: u32, end: u32) {
             let mask = Self::get_range_mask(begin, end);
             debug_assert!((self.v & mask) == mask);
             self.v ^= mask;
@@ -151,7 +152,7 @@ mod bitboard {
     }
 
     #[derive(Debug, Clone)]
-    struct Board {
+    pub struct Board {
         n: usize,
         points: [Vec<Bitset>; DIR_COUNT],
         edges: [Vec<Bitset>; DIR_COUNT],
@@ -181,6 +182,7 @@ mod bitboard {
             Self { n, points, edges }
         }
 
+        #[inline]
         pub fn find_next(&self, v: Vec2, dir: usize) -> Option<Vec2> {
             let v_rot = v.rot(dir, self.n);
             let next = self.points[dir][v_rot.y as usize].find_next(v_rot.x as u32 + 1);
@@ -188,8 +190,15 @@ mod bitboard {
             if let Some(next) = next {
                 let unit = UNITS[dir];
                 let d = next as i32 - v_rot.x;
-                let next = v + unit * d;
-                Some(next)
+                let has_edge = self.edges[dir][v_rot.y as usize]
+                    .contains_range(v_rot.x as u32, (v_rot.x + d) as u32);
+
+                if has_edge {
+                    None
+                } else {
+                    let next = v + unit * d;
+                    Some(next)
+                }
             } else {
                 None
             }
@@ -374,65 +383,36 @@ impl Input {
         let dy = v.y - c;
         dx * dx + dy * dy + 1
     }
-
-    fn to_state(&self) -> State {
-        let mut occupied = Map2d::new(vec![false; self.n * self.n], self.n);
-        let edges = Map2d::new(vec![[false; 8]; self.n * self.n], self.n);
-
-        for p in self.p.iter() {
-            occupied[p] = true;
-        }
-
-        State {
-            points: self.p.clone(),
-            occupied,
-            edges,
-            rectangles: vec![],
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
 struct State {
     points: Vec<Vec2>,
-    occupied: Map2d<bool>,
-    edges: Map2d<[bool; 8]>,
+    board: Board,
     rectangles: Vec<[Vec2; 4]>,
 }
 
 impl State {
-    fn from_input(
-        points: Vec<Vec2>,
-        occupied: Map2d<bool>,
-        edges: Map2d<[bool; 8]>,
-        rectangles: Vec<[Vec2; 4]>,
-    ) -> Self {
+    fn init(input: &Input) -> Self {
+        let points = input.p.clone();
+        let board = Board::init(input.n, &input.p);
+        let rectangles = vec![];
+
         Self {
             points,
-            occupied,
-            edges,
-            rectangles: vec![],
+            board,
+            rectangles,
         }
     }
 
     fn apply(&mut self, rectangle: &[Vec2; 4]) {
         self.points.push(rectangle[0]);
-        self.occupied[rectangle[0]] = true;
+        self.board.add_point(rectangle[0]);
         self.rectangles.push(rectangle.clone());
 
         for (i, &from) in rectangle.iter().enumerate() {
             let to = rectangle[(i + 1) % 4];
-            let mut v = from;
-            let unit = (to - from).unit();
-            let dir = unit.to_dir();
-
-            while v != to {
-                debug_assert!(!self.edges[v][dir]);
-                self.edges[v][dir] = true;
-                v += unit;
-                debug_assert!(!self.edges[v][inv(dir)]);
-                self.edges[v][inv(dir)] = true;
-            }
+            self.board.connect(from, to);
         }
     }
 
@@ -486,7 +466,7 @@ fn main() {
 }
 
 fn greedy(input: &Input) -> Output {
-    let mut state = input.to_state();
+    let mut state = State::init(input);
     let since = Instant::now();
 
     while (Instant::now() - since).as_millis() < 4900 {
@@ -497,15 +477,15 @@ fn greedy(input: &Input) -> Output {
             for y in 0..(input.n as i32) {
                 let p0 = Vec2::new(x, y);
 
-                if state.occupied[p0] {
+                if state.board.is_occupied(p0) {
                     continue;
                 }
 
                 for dir in 0..8 {
-                    let p1 = skip_none!(search(input, &state, p0, dir));
-                    let p2 = skip_none!(search(input, &state, p0, rot_c(dir)));
-                    let p13 = skip_none!(search(input, &state, p1, rot_c(dir)));
-                    let p23 = skip_none!(search(input, &state, p2, dir));
+                    let p1 = skip_none!(state.board.find_next(p0, dir));
+                    let p2 = skip_none!(state.board.find_next(p0, rot_c(dir)));
+                    let p13 = skip_none!(state.board.find_next(p1, rot_c(dir)));
+                    let p23 = skip_none!(state.board.find_next(p2, dir));
 
                     if p13 != p23 {
                         continue;
@@ -528,23 +508,6 @@ fn greedy(input: &Input) -> Output {
     }
 
     state.to_output()
-}
-
-fn search(input: &Input, state: &State, start: Vec2, dir: usize) -> Option<Vec2> {
-    let delta = UNITS[dir];
-    let mut current = start + delta;
-
-    while current.in_map(input.n) {
-        if state.edges[current][inv(dir)] {
-            return None;
-        } else if state.occupied[current] {
-            return Some(current);
-        }
-
-        current += delta;
-    }
-
-    None
 }
 
 mod vector {
