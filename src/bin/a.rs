@@ -5,6 +5,7 @@ use bitboard::Board;
 use proconio::*;
 #[allow(unused_imports)]
 use rand::prelude::*;
+use rand_pcg::Pcg64Mcg;
 
 use crate::vector::{rot_c, Vec2};
 
@@ -481,48 +482,68 @@ fn main() {
 }
 
 fn greedy(input: &Input) -> Output {
-    let mut state = State::init(input);
+    let mut best_state = State::init(input);
+    let mut best_score = best_state.score;
+    let mut rng = Pcg64Mcg::new(42);
 
     while (Instant::now() - input.since).as_millis() < 4900 {
-        let mut best_rectangle = None;
-        let mut best_weight = 0;
+        let mut state = State::init(input);
 
-        for x in 0..(input.n as i32) {
-            for y in 0..(input.n as i32) {
-                let p0 = Vec2::new(x, y);
+        while (Instant::now() - input.since).as_millis() < 4900 {
+            let mut candidates = vec![];
 
-                if state.board.is_occupied(p0) {
-                    continue;
-                }
+            for x in 0..(input.n as i32) {
+                for y in 0..(input.n as i32) {
+                    let p0 = Vec2::new(x, y);
 
-                for dir in 0..8 {
-                    let p1 = skip_none!(state.board.find_next(p0, dir));
-                    let p2 = skip_none!(state.board.find_next(p0, rot_c(dir)));
-                    let p13 = skip_none!(state.board.find_next(p1, rot_c(dir)));
-                    let p23 = skip_none!(state.board.find_next(p2, dir));
-
-                    if p13 != p23 {
+                    if state.board.is_occupied(p0) {
                         continue;
                     }
 
-                    let weight = input.get_weight(p0);
+                    for dir in 0..8 {
+                        let p1 = skip_none!(state.board.find_next(p0, dir));
+                        let p2 = skip_none!(state.board.find_next(p0, rot_c(dir)));
+                        let p13 = skip_none!(state.board.find_next(p1, rot_c(dir)));
+                        let p23 = skip_none!(state.board.find_next(p2, dir));
 
-                    if chmax!(best_weight, weight) {
-                        best_rectangle = Some([p0, p1, p13, p2]);
+                        if p13 != p23 {
+                            continue;
+                        }
+
+                        let weight = input.get_weight(p0);
+                        candidates.push((weight, [p0, p1, p13, p2]));
                     }
                 }
             }
+
+            if candidates.len() > 0 {
+                let mut prefix_sum = vec![0];
+
+                for (w, _) in candidates.iter() {
+                    let w = prefix_sum.last().unwrap() + w;
+                    prefix_sum.push(w);
+                }
+
+                let w = rng.gen_range(0, *prefix_sum.last().unwrap());
+
+                for i in 0..candidates.len() {
+                    if prefix_sum[i + 1] > w {
+                        state.apply(input, &candidates[i].1);
+                        break;
+                    }
+                }
+            } else {
+                break;
+            }
         }
 
-        if let Some(rect) = best_rectangle {
-            state.apply(input, &rect);
-        } else {
-            break;
+        if chmax!(best_score, state.score) {
+            best_state = state;
         }
     }
 
-    eprintln!("score: {}", state.calc_normalized_score(input));
-    state.to_output()
+    eprintln!("score: {}", best_state.calc_normalized_score(input));
+    best_state.to_output()
 }
 
 #[allow(dead_code)]
