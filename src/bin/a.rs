@@ -6,7 +6,7 @@ use proconio::*;
 #[allow(unused_imports)]
 use rand::prelude::*;
 
-use crate::vector::{rot_c, Vec2};
+use crate::vector::{inv, rot_c, Vec2};
 
 #[allow(unused_macros)]
 macro_rules! chmin {
@@ -122,6 +122,7 @@ mod bitboard {
 
         #[inline]
         fn contains_range(&self, begin: u32, end: u32) -> bool {
+            debug_assert!(begin <= end);
             (self.v & Self::get_range_mask(begin, end)) > 0
         }
 
@@ -213,7 +214,7 @@ mod bitboard {
         pub fn can_connect(&self, v1: Vec2, v2: Vec2) -> bool {
             let (dir, y, x1, x2) = self.get_rot(v1, v2);
             let has_point = self.points[dir][y].contains_range(x1 + 1, x2);
-            let has_edge = self.points[dir][y].contains_range(x1, x2);
+            let has_edge = self.edges[dir][y].contains_range(x1, x2);
             !has_point && !has_edge
         }
 
@@ -487,29 +488,24 @@ fn greedy(input: &Input) -> Output {
         let mut best_rectangle = None;
         let mut best_weight = 0;
 
-        for x in 0..(input.n as i32) {
-            for y in 0..(input.n as i32) {
-                let p0 = Vec2::new(x, y);
+        for &p1 in state.points.iter() {
+            for dir in 0..8 {
+                let p2 = skip_none!(state.board.find_next(p1, dir));
+                let p3 = skip_none!(state.board.find_next(p2, rot_c(dir)));
+                let p0 = p1 + (p3 - p2);
 
-                if state.board.is_occupied(p0) {
+                if !p0.in_map(input.n)
+                    || state.board.is_occupied(p0)
+                    || !state.board.can_connect(p1, p0)
+                    || !state.board.can_connect(p3, p0)
+                {
                     continue;
                 }
 
-                for dir in 0..8 {
-                    let p1 = skip_none!(state.board.find_next(p0, dir));
-                    let p2 = skip_none!(state.board.find_next(p0, rot_c(dir)));
-                    let p13 = skip_none!(state.board.find_next(p1, rot_c(dir)));
-                    let p23 = skip_none!(state.board.find_next(p2, dir));
+                let weight = input.get_weight(p0);
 
-                    if p13 != p23 {
-                        continue;
-                    }
-
-                    let weight = input.get_weight(p0);
-
-                    if chmax!(best_weight, weight) {
-                        best_rectangle = Some([p0, p1, p13, p2]);
-                    }
+                if chmax!(best_weight, weight) {
+                    best_rectangle = Some([p0, p1, p2, p3]);
                 }
             }
         }
@@ -574,11 +570,13 @@ mod vector {
         }
 
         pub fn unit(&self) -> Self {
+            debug_assert!(((self.x == 0) ^ (self.y == 0)) || self.x.abs() == self.y.abs());
             Self::new(self.x.signum(), self.y.signum())
         }
 
         pub fn to_dir(&self) -> usize {
-            debug_assert!(self.x.abs() + self.y.abs() == 1);
+            let abs = self.x.abs() + self.y.abs();
+            debug_assert!(1 <= abs && abs <= 2);
             const DIRECTIONS: [usize; 9] = [5, 6, 7, 4, !0, 0, 3, 2, 1];
             DIRECTIONS[((self.y + 1) * 3 + (self.x + 1)) as usize]
         }
