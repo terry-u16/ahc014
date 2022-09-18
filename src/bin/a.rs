@@ -419,6 +419,17 @@ impl State {
         }
     }
 
+    fn revert(&mut self) {
+        let rectangle = self.rectangles.pop().unwrap();
+        self.points.pop();
+        self.board.remove_point(rectangle[0]);
+
+        for (i, &from) in rectangle.iter().enumerate() {
+            let to = rectangle[(i + 1) % 4];
+            self.board.disconnect(from, to);
+        }
+    }
+
     fn calc_score(&self, input: &Input) -> i32 {
         let mut total_weight = 0;
 
