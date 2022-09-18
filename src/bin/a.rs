@@ -446,12 +446,33 @@ mod vector {
             (self.x as u32) < n && (self.y as u32) < n
         }
 
-        pub const fn rot_cc(&self) -> Self {
-            Self::new(-self.y, self.x)
-        }
+        pub fn rot(&self, dir: usize, n: usize) -> Self {
+            let mut v = *self;
+            let n = n as i32;
 
-        pub const fn rot_c(&self) -> Self {
-            Self::new(self.y, -self.x)
+            // 180°回転
+            if ((dir >> 2) & 1) > 0 {
+                v.x = n - 1 - v.x;
+                v.y = n - 1 - v.y;
+            }
+
+            // 90°回転
+            if ((dir >> 1) & 1) > 0 {
+                let x = v.y;
+                let y = n - 1 - v.x;
+                v.x = x;
+                v.y = y;
+            }
+
+            // 45°回転
+            if (dir & 1) > 0 {
+                let x = (v.x + v.y) >> 1;
+                let y = n - 1 - v.x + v.y;
+                v.x = x;
+                v.y = y;
+            }
+
+            v
         }
 
         pub fn unit(&self) -> Self {
@@ -495,9 +516,20 @@ mod vector {
         }
     }
 
-    impl std::fmt::Display for Vec2 {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "({}, {})", self.x, self.y)
+    impl std::ops::Mul<i32> for Vec2 {
+        type Output = Vec2;
+
+        fn mul(self, rhs: i32) -> Self::Output {
+            let x = self.x * rhs;
+            let y = self.y * rhs;
+            Self::new(x, y)
+        }
+    }
+
+    impl std::ops::MulAssign<i32> for Vec2 {
+        fn mul_assign(&mut self, rhs: i32) {
+            self.x *= rhs;
+            self.y *= rhs;
         }
     }
 
@@ -506,6 +538,12 @@ mod vector {
 
         fn neg(self) -> Self::Output {
             Vec2::new(-self.x, -self.y)
+        }
+    }
+
+    impl std::fmt::Display for Vec2 {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "({}, {})", self.x, self.y)
         }
     }
 
@@ -608,6 +646,32 @@ mod vector {
             let begin = row * self.width;
             let end = begin + self.width;
             &mut self.map[begin..end]
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use super::Vec2;
+
+        #[test]
+        fn rot180() {
+            let v = Vec2::new(2, 1);
+            let v = v.rot(4, 4);
+            assert_eq!(v, Vec2::new(1, 2));
+        }
+
+        #[test]
+        fn rot90() {
+            let v = Vec2::new(2, 1);
+            let v = v.rot(2, 4);
+            assert_eq!(v, Vec2::new(1, 1));
+        }
+
+        #[test]
+        fn rot45() {
+            let v = Vec2::new(2, 1);
+            let v = v.rot(1, 4);
+            assert_eq!(v, Vec2::new(1, 2));
         }
     }
 }
