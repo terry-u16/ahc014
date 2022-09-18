@@ -1,12 +1,16 @@
 use std::time::Instant;
 
+use beam::{RcList, Scored};
 use bitboard::Board;
 #[allow(unused_imports)]
 use proconio::*;
 #[allow(unused_imports)]
 use rand::prelude::*;
 
-use crate::vector::{rot_c, Vec2};
+use crate::{
+    beam::BeamQueue,
+    vector::{rot_c, Vec2},
+};
 
 #[allow(unused_macros)]
 macro_rules! chmin {
@@ -392,7 +396,7 @@ impl Input {
 struct State {
     points: Vec<Vec2>,
     board: Board,
-    rectangles: Vec<[Vec2; 4]>,
+    rectangles: RcList<[Vec2; 4]>,
     score: i32,
 }
 
@@ -400,7 +404,7 @@ impl State {
     fn init(input: &Input) -> Self {
         let points = input.p.clone();
         let board = Board::init(input.n, &input.p);
-        let rectangles = vec![];
+        let rectangles = RcList::new();
 
         let score = points.iter().map(|p| input.get_weight(*p)).sum();
 
@@ -412,28 +416,19 @@ impl State {
         }
     }
 
-    fn apply(&mut self, input: &Input, rectangle: &[Vec2; 4]) {
-        self.points.push(rectangle[0]);
-        self.board.add_point(rectangle[0]);
-        self.rectangles.push(rectangle.clone());
-        self.score += input.get_weight(rectangle[0]);
+    fn apply(&self, input: &Input, rectangle: &[Vec2; 4]) -> State {
+        let mut applied = self.clone();
+        applied.points.push(rectangle[0]);
+        applied.board.add_point(rectangle[0]);
+        applied.rectangles = applied.rectangles.push(rectangle.clone());
+        applied.score += input.get_weight(rectangle[0]);
 
         for (i, &from) in rectangle.iter().enumerate() {
             let to = rectangle[(i + 1) % 4];
-            self.board.connect(from, to);
+            applied.board.connect(from, to);
         }
-    }
 
-    fn revert(&mut self, input: &Input) {
-        let rectangle = self.rectangles.pop().unwrap();
-        self.points.pop();
-        self.board.remove_point(rectangle[0]);
-        self.score -= input.get_weight(rectangle[0]);
-
-        for (i, &from) in rectangle.iter().enumerate() {
-            let to = rectangle[(i + 1) % 4];
-            self.board.disconnect(from, to);
-        }
+        applied
     }
 
     fn calc_normalized_score(&self, input: &Input) -> i32 {
@@ -441,7 +436,13 @@ impl State {
     }
 
     fn to_output(&self) -> Output {
-        Output::new(self.rectangles.clone())
+        Output::new(self.rectangles.to_vec())
+    }
+}
+
+impl Scored for State {
+    fn score(&self) -> i64 {
+        self.score as i64
     }
 }
 
@@ -481,48 +482,67 @@ fn main() {
 }
 
 fn greedy(input: &Input) -> Output {
-    let mut state = State::init(input);
+    let mut best_state = State::init(input);
+    let mut best_score = best_state.score;
 
-    while (Instant::now() - input.since).as_millis() < 4900 {
-        let mut best_rectangle = None;
-        let mut best_weight = 0;
+    let mut current_beam = BeamQueue::new(500);
+    current_beam.push(State::init(input));
 
-        for x in 0..(input.n as i32) {
-            for y in 0..(input.n as i32) {
-                let p0 = Vec2::new(x, y);
+    while current_beam.len() > 0 {
+        let t = (Instant::now() - input.since).as_millis();
+        let beam_width = match t {
+            0..=3000 => 500,
+            3001..=3500 => 250,
+            3501..=4000 => 100,
+            4001..=4500 => 50,
+            4501..=4700 => 30,
+            4701..=4900 => 10,
+            4901..=4950 => 1,
+            _ => break,
+        };
 
-                if state.board.is_occupied(p0) {
-                    continue;
-                }
+        let mut next_beam = BeamQueue::new(beam_width);
 
-                for dir in 0..8 {
-                    let p1 = skip_none!(state.board.find_next(p0, dir));
-                    let p2 = skip_none!(state.board.find_next(p0, rot_c(dir)));
-                    let p13 = skip_none!(state.board.find_next(p1, rot_c(dir)));
-                    let p23 = skip_none!(state.board.find_next(p2, dir));
+        while let Some(state) = current_beam.pop() {
+            for x in 0..(input.n as i32) {
+                for y in 0..(input.n as i32) {
+                    let p0 = Vec2::new(x, y);
 
-                    if p13 != p23 {
+                    if state.board.is_occupied(p0) {
                         continue;
                     }
 
-                    let weight = input.get_weight(p0);
+                    for dir in 0..8 {
+                        let p1 = skip_none!(state.board.find_next(p0, dir));
+                        let p2 = skip_none!(state.board.find_next(p0, rot_c(dir)));
+                        let p13 = skip_none!(state.board.find_next(p1, rot_c(dir)));
+                        let p23 = skip_none!(state.board.find_next(p2, dir));
 
-                    if chmax!(best_weight, weight) {
-                        best_rectangle = Some([p0, p1, p13, p2]);
+                        if p13 != p23 {
+                            continue;
+                        }
+
+                        let weight = input.get_weight(p0) as i64;
+                        let next_score = state.score() + weight;
+                        let rectangle = [p0, p1, p13, p2];
+
+                        if next_beam.can_push(next_score) {
+                            next_beam.push(state.apply(input, &rectangle));
+                        }
+
+                        if chmax!(best_score, next_score as i32) {
+                            best_state = state.apply(input, &rectangle);
+                        }
                     }
                 }
             }
         }
 
-        if let Some(rect) = best_rectangle {
-            state.apply(input, &rect);
-        } else {
-            break;
-        }
+        current_beam = next_beam;
     }
 
-    eprintln!("score: {}", state.calc_normalized_score(input));
-    state.to_output()
+    eprintln!("score: {}", best_state.calc_normalized_score(input));
+    best_state.to_output()
 }
 
 #[allow(dead_code)]
@@ -695,4 +715,341 @@ mod vector {
             assert_eq!(v, Vec2::new(1, 2));
         }
     }
+}
+
+#[allow(dead_code)]
+mod beam {
+    pub trait Scored {
+        fn score(&self) -> i64;
+    }
+
+    #[derive(Debug, Clone)]
+    struct BeamCell<T: Scored> {
+        state: Box<T>,
+    }
+
+    impl<T: Scored> BeamCell<T> {
+        fn new(state: T) -> Self {
+            Self {
+                state: Box::new(state),
+            }
+        }
+
+        fn unwrap(self) -> T {
+            *self.state
+        }
+    }
+
+    impl<T: Scored> Ord for BeamCell<T> {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            self.state.score().cmp(&other.state.score())
+        }
+    }
+
+    impl<T: Scored> PartialOrd for BeamCell<T> {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl<T: Scored> PartialEq for BeamCell<T> {
+        fn eq(&self, other: &Self) -> bool {
+            self.state.score().eq(&other.state.score())
+        }
+    }
+
+    impl<T: Scored> Eq for BeamCell<T> {}
+
+    // Limited Interval Heap
+    // Copyright (c) 2018 hatoo, released under MIT License
+    // https://github.com/hatoo/competitive-rust-snippets/blob/master/LICENSE-MIT
+    #[derive(Clone, Debug)]
+    pub struct BeamQueue<T: Scored> {
+        heap: IntervalHeap<BeamCell<T>>,
+        pub limit: usize,
+    }
+
+    impl<T: Scored> BeamQueue<T> {
+        pub fn new(limit: usize) -> BeamQueue<T> {
+            BeamQueue {
+                heap: IntervalHeap::with_capacity(limit),
+                limit,
+            }
+        }
+
+        #[inline]
+        pub fn is_empty(&self) -> bool {
+            self.heap.is_empty()
+        }
+
+        pub fn push(&mut self, x: T) -> Option<T> {
+            match self.push_internal(BeamCell::new(x)) {
+                Some(x) => Some(x.unwrap()),
+                None => None,
+            }
+        }
+
+        #[inline]
+        fn push_internal(&mut self, x: BeamCell<T>) -> Option<BeamCell<T>> {
+            if self.heap.len() < self.limit {
+                self.heap.push(x);
+                None
+            } else {
+                if self.heap.data[0] < x {
+                    let mut x = x;
+                    std::mem::swap(&mut x, &mut self.heap.data[0]);
+                    if self.heap.len() >= 2 && self.heap.data[0] > self.heap.data[1] {
+                        self.heap.data.swap(0, 1);
+                    }
+                    self.heap.down(0);
+                    Some(x)
+                } else {
+                    Some(x)
+                }
+            }
+        }
+
+        #[inline]
+        pub fn pop(&mut self) -> Option<T> {
+            match self.pop_internal() {
+                Some(cell) => Some(cell.unwrap()),
+                None => None,
+            }
+        }
+
+        #[inline]
+        fn pop_internal(&mut self) -> Option<BeamCell<T>> {
+            self.heap.pop_max()
+        }
+
+        #[inline]
+        pub fn clear(&mut self) {
+            self.heap.clear();
+        }
+
+        #[inline]
+        pub fn can_push(&self, score: i64) -> bool {
+            if self.heap.len() < self.limit {
+                return true;
+            }
+
+            let cell = self.heap.peek_min().unwrap();
+            score > cell.state.score()
+        }
+
+        #[inline]
+        pub fn len(&self) -> usize {
+            self.heap.len()
+        }
+    } // Limited Interval Heap ends here
+
+    // Interval Heap
+    // Copyright (c) 2018 hatoo, released under MIT License
+    // https://github.com/hatoo/competitive-rust-snippets/blob/master/LICENSE-MIT
+    #[derive(Clone, Debug)]
+    struct IntervalHeap<T: Ord + Eq> {
+        data: Vec<T>,
+    }
+
+    impl<T: Ord + Eq> IntervalHeap<T> {
+        fn new() -> IntervalHeap<T> {
+            IntervalHeap { data: Vec::new() }
+        }
+
+        fn with_capacity(n: usize) -> IntervalHeap<T> {
+            IntervalHeap {
+                data: Vec::with_capacity(n),
+            }
+        }
+
+        #[inline]
+        fn len(&self) -> usize {
+            self.data.len()
+        }
+
+        #[inline]
+        fn is_empty(&self) -> bool {
+            self.data.is_empty()
+        }
+
+        #[inline]
+        fn push(&mut self, x: T) {
+            let i = self.data.len();
+            self.data.push(x);
+            self.up(i);
+        }
+
+        #[inline]
+        fn peek_min(&self) -> Option<&T> {
+            self.data.first()
+        }
+
+        #[inline]
+        fn peek_max(&self) -> Option<&T> {
+            if self.data.len() > 1 {
+                self.data.get(1)
+            } else {
+                self.data.first()
+            }
+        }
+
+        #[inline]
+        fn pop_min(&mut self) -> Option<T> {
+            if self.data.len() == 1 {
+                return self.data.pop();
+            }
+            if self.data.is_empty() {
+                return None;
+            }
+            let len = self.data.len();
+            self.data.swap(0, len - 1);
+            let res = self.data.pop();
+            self.down(0);
+            res
+        }
+
+        #[inline]
+        fn pop_max(&mut self) -> Option<T> {
+            if self.data.len() <= 2 {
+                return self.data.pop();
+            }
+            if self.data.is_empty() {
+                return None;
+            }
+            let len = self.data.len();
+            self.data.swap(1, len - 1);
+            let res = self.data.pop();
+            self.down(1);
+            res
+        }
+
+        #[inline]
+        fn parent(i: usize) -> usize {
+            ((i >> 1) - 1) & !1
+        }
+
+        #[inline]
+        fn down(&mut self, i: usize) {
+            let mut i = i;
+            let n = self.data.len();
+            if i & 1 == 0 {
+                while (i << 1) + 2 < n {
+                    let mut k = (i << 1) + 2;
+                    if k + 2 < n
+                        && unsafe { self.data.get_unchecked(k + 2) }
+                            < unsafe { self.data.get_unchecked(k) }
+                    {
+                        k = k + 2;
+                    }
+                    if unsafe { self.data.get_unchecked(i) } > unsafe { self.data.get_unchecked(k) }
+                    {
+                        self.data.swap(i, k);
+                        i = k;
+                        if i + 1 < self.data.len()
+                            && unsafe { self.data.get_unchecked(i) }
+                                > unsafe { self.data.get_unchecked(i + 1) }
+                        {
+                            self.data.swap(i, i + 1);
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            } else {
+                while (i << 1) + 1 < n {
+                    let mut k = (i << 1) + 1;
+                    if k + 2 < n
+                        && unsafe { self.data.get_unchecked(k + 2) }
+                            > unsafe { self.data.get_unchecked(k) }
+                    {
+                        k = k + 2;
+                    }
+                    if unsafe { self.data.get_unchecked(i) } < unsafe { self.data.get_unchecked(k) }
+                    {
+                        self.data.swap(i, k);
+                        i = k;
+                        if i > 0
+                            && unsafe { self.data.get_unchecked(i) }
+                                < unsafe { self.data.get_unchecked(i - 1) }
+                        {
+                            self.data.swap(i, i - 1);
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        #[inline]
+        fn up(&mut self, i: usize) {
+            let mut i = i;
+            if i & 1 == 1
+                && unsafe { self.data.get_unchecked(i) } < unsafe { self.data.get_unchecked(i - 1) }
+            {
+                self.data.swap(i, i - 1);
+                i -= 1;
+            }
+            while i > 1
+                && unsafe { self.data.get_unchecked(i) }
+                    < unsafe { self.data.get_unchecked(Self::parent(i)) }
+            {
+                let p = Self::parent(i);
+                self.data.swap(i, p);
+                i = p;
+            }
+            while i > 1
+                && unsafe { self.data.get_unchecked(i) }
+                    > unsafe { self.data.get_unchecked(Self::parent(i) + 1) }
+            {
+                let p = Self::parent(i) + 1;
+                self.data.swap(i, p);
+                i = p;
+            }
+        }
+
+        #[inline]
+        fn clear(&mut self) {
+            self.data.clear();
+        }
+    }
+
+    // RcList
+    // Copyright (c) 2018 hatoo, released under MIT License
+    // https://github.com/hatoo/competitive-rust-snippets/blob/master/LICENSE-MIT
+    use std::rc::Rc;
+
+    #[derive(Debug)]
+    struct RcListInner<T> {
+        parent: RcList<T>,
+        value: T,
+    }
+
+    /// O(1) clone, O(1) push
+    #[derive(Clone, Debug)]
+    pub struct RcList<T>(Option<Rc<RcListInner<T>>>);
+
+    impl<T: Clone> RcList<T> {
+        pub fn new() -> Self {
+            RcList(None)
+        }
+
+        #[inline]
+        pub fn push(&self, value: T) -> RcList<T> {
+            RcList(Some(Rc::new(RcListInner {
+                parent: self.clone(),
+                value,
+            })))
+        }
+
+        pub fn to_vec(&self) -> Vec<T> {
+            if let Some(ref inner) = self.0 {
+                let mut p = inner.parent.to_vec();
+                p.push(inner.value.clone());
+                p
+            } else {
+                Vec::new()
+            }
+        }
+    } // RcList ends here
 }
