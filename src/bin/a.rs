@@ -550,7 +550,8 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
     }
 
     loop {
-        let mut candidates_min = vec![];
+        let mut candidates_pal = vec![];
+        let mut candidates_diag = vec![];
         let mut candidates = vec![];
 
         for &p1 in state.points.iter() {
@@ -573,18 +574,20 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
                 let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
                 let rectangle = [p0, p1, p2, p3];
 
-                if (v0.norm2_sq() == 1 && v1.norm2_sq() == 1)
-                    || (v0.norm2_sq() == 2 && v1.norm2_sq() == 2)
-                {
-                    candidates_min.push((weight, rectangle));
+                if v0.norm2_sq() == 1 && v1.norm2_sq() == 1 {
+                    candidates_pal.push((weight, rectangle));
+                } else if v0.norm2_sq() == 2 && v1.norm2_sq() == 2 {
+                    candidates_diag.push((weight, rectangle));
                 } else {
                     candidates.push((weight, rectangle));
                 }
             }
         }
 
-        if candidates_min.len() > 0 {
-            state.apply(input, &choice(&candidates_min, rng));
+        if candidates_pal.len() > 0 {
+            state.apply(input, &choice(&candidates_pal, rng));
+        } else if candidates_diag.len() > 0 {
+            state.apply(input, &choice(&candidates_diag, rng));
         } else if candidates.len() > 0 {
             state.apply(input, &choice(&candidates, rng));
         } else {
