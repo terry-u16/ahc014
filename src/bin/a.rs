@@ -488,9 +488,16 @@ fn greedy(input: &Input) -> Output {
     let mut rng = Pcg64Mcg::new(42);
 
     while (Instant::now() - input.since).as_millis() < 4900 {
+        let init_rectangles =
+            &best_state.rectangles[0..rng.gen_range(0, best_state.rectangles.len() + 1)];
+
         let mut state = State::init(input);
 
-        while (Instant::now() - input.since).as_millis() < 4900 {
+        for rect in init_rectangles {
+            state.apply(input, rect);
+        }
+
+        loop {
             let mut candidates = vec![];
 
             for &p1 in state.points.iter() {
