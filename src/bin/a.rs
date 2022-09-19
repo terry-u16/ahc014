@@ -7,7 +7,7 @@ use proconio::*;
 use rand::prelude::*;
 use rand_pcg::Pcg64Mcg;
 
-use crate::vector::{inv, rot_c, Vec2};
+use crate::vector::{inv, rot_c, rot_cc, Vec2};
 
 #[allow(unused_macros)]
 macro_rules! chmin {
@@ -414,6 +414,21 @@ impl State {
         }
     }
 
+    fn can_apply(&self, rectangle: &[Vec2; 4]) -> bool {
+        if self.board.is_occupied(rectangle[0]) {
+            return false;
+        }
+
+        for (i, &from) in rectangle.iter().enumerate() {
+            let to = rectangle[(i + 1) % 4];
+            if !self.board.can_connect(from, to) {
+                return false;
+            }
+        }
+
+        true
+    }
+
     fn apply(&mut self, input: &Input, rectangle: &[Vec2; 4]) {
         self.points.push(rectangle[0]);
         self.board.add_point(rectangle[0]);
@@ -549,56 +564,151 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
         state.apply(input, rect);
     }
 
+    let mut candidates_pal = vec![];
+    let mut candidates_diag = vec![];
+    let mut candidates = vec![];
+
+    for &p1 in state.points.iter() {
+        for dir in 0..8 {
+            let p2 = skip_none!(state.board.find_next(p1, dir));
+            let p3 = skip_none!(state.board.find_next(p2, rot_c(dir)));
+            let p0 = p1 + (p3 - p2);
+
+            if !p0.in_map(input.n)
+                || state.board.is_occupied(p0)
+                || !state.board.can_connect(p1, p0)
+                || !state.board.can_connect(p3, p0)
+            {
+                continue;
+            }
+
+            let weight = input.get_weight(p0) as f64;
+            let v0 = p1 - p0;
+            let v1 = p3 - p0;
+            let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
+            let rectangle = [p0, p1, p2, p3];
+
+            if v0.norm2_sq() == 1 && v1.norm2_sq() == 1 {
+                candidates_pal.push((weight, rectangle));
+            } else if v0.norm2_sq() == 2 && v1.norm2_sq() == 2 {
+                candidates_diag.push((weight, rectangle));
+            } else {
+                candidates.push((weight, rectangle));
+            }
+        }
+    }
+
     loop {
-        let mut candidates_pal = vec![];
-        let mut candidates_diag = vec![];
-        let mut candidates = vec![];
+        let rectangle = if candidates_pal.len() > 0 {
+            choice(&mut candidates_pal, rng)
+        } else if candidates_diag.len() > 0 {
+            choice(&mut candidates_diag, rng)
+        } else if candidates.len() > 0 {
+            choice(&mut candidates, rng)
+        } else {
+            break;
+        };
 
-        for &p1 in state.points.iter() {
-            for dir in 0..8 {
-                let p2 = skip_none!(state.board.find_next(p1, dir));
-                let p3 = skip_none!(state.board.find_next(p2, rot_c(dir)));
-                let p0 = p1 + (p3 - p2);
+        if !state.can_apply(&rectangle) {
+            continue;
+        }
 
-                if !p0.in_map(input.n)
-                    || state.board.is_occupied(p0)
-                    || !state.board.can_connect(p1, p0)
-                    || !state.board.can_connect(p3, p0)
-                {
-                    continue;
-                }
+        state.apply(input, &rectangle);
+        let p1 = rectangle[0];
 
-                let weight = input.get_weight(p0) as f64;
-                let v0 = p1 - p0;
-                let v1 = p3 - p0;
-                let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
-                let rectangle = [p0, p1, p2, p3];
+        for dir in 0..8 {
+            let p2 = skip_none!(state.board.find_next(p1, dir));
+            let p3 = skip_none!(state.board.find_next(p2, rot_c(dir)));
+            let p0 = p1 + (p3 - p2);
 
-                if v0.norm2_sq() == 1 && v1.norm2_sq() == 1 {
-                    candidates_pal.push((weight, rectangle));
-                } else if v0.norm2_sq() == 2 && v1.norm2_sq() == 2 {
-                    candidates_diag.push((weight, rectangle));
-                } else {
-                    candidates.push((weight, rectangle));
-                }
+            if !p0.in_map(input.n)
+                || state.board.is_occupied(p0)
+                || !state.board.can_connect(p1, p0)
+                || !state.board.can_connect(p3, p0)
+            {
+                continue;
+            }
+
+            let weight = input.get_weight(p0) as f64;
+            let v0 = p1 - p0;
+            let v1 = p3 - p0;
+            let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
+            let rectangle = [p0, p1, p2, p3];
+
+            if v0.norm2_sq() == 1 && v1.norm2_sq() == 1 {
+                candidates_pal.push((weight, rectangle));
+            } else if v0.norm2_sq() == 2 && v1.norm2_sq() == 2 {
+                candidates_diag.push((weight, rectangle));
+            } else {
+                candidates.push((weight, rectangle));
             }
         }
 
-        if candidates_pal.len() > 0 {
-            state.apply(input, &choice(&candidates_pal, rng));
-        } else if candidates_diag.len() > 0 {
-            state.apply(input, &choice(&candidates_diag, rng));
-        } else if candidates.len() > 0 {
-            state.apply(input, &choice(&candidates, rng));
-        } else {
-            break;
+        let p2 = rectangle[0];
+
+        for dir in 0..8 {
+            let p1 = skip_none!(state.board.find_next(p2, dir));
+            let p3 = skip_none!(state.board.find_next(p2, rot_cc(dir)));
+            let p0 = p1 + (p3 - p2);
+
+            if !p0.in_map(input.n)
+                || state.board.is_occupied(p0)
+                || !state.board.can_connect(p1, p0)
+                || !state.board.can_connect(p3, p0)
+            {
+                continue;
+            }
+
+            let weight = input.get_weight(p0) as f64;
+            let v0 = p1 - p0;
+            let v1 = p3 - p0;
+            let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
+            let rectangle = [p0, p1, p2, p3];
+
+            if v0.norm2_sq() == 1 && v1.norm2_sq() == 1 {
+                candidates_pal.push((weight, rectangle));
+            } else if v0.norm2_sq() == 2 && v1.norm2_sq() == 2 {
+                candidates_diag.push((weight, rectangle));
+            } else {
+                candidates.push((weight, rectangle));
+            }
+        }
+
+        let p3 = rectangle[0];
+
+        for dir in 0..8 {
+            let p2 = skip_none!(state.board.find_next(p3, dir));
+            let p1 = skip_none!(state.board.find_next(p2, rot_cc(dir)));
+            let p0 = p1 + (p3 - p2);
+
+            if !p0.in_map(input.n)
+                || state.board.is_occupied(p0)
+                || !state.board.can_connect(p1, p0)
+                || !state.board.can_connect(p3, p0)
+            {
+                continue;
+            }
+
+            let weight = input.get_weight(p0) as f64;
+            let v0 = p1 - p0;
+            let v1 = p3 - p0;
+            let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
+            let rectangle = [p0, p1, p2, p3];
+
+            if v0.norm2_sq() == 1 && v1.norm2_sq() == 1 {
+                candidates_pal.push((weight, rectangle));
+            } else if v0.norm2_sq() == 2 && v1.norm2_sq() == 2 {
+                candidates_diag.push((weight, rectangle));
+            } else {
+                candidates.push((weight, rectangle));
+            }
         }
     }
 
     state
 }
 
-fn choice<'a, T>(candidates: &'a [(f64, T)], rng: &mut Pcg64Mcg) -> &'a T {
+fn choice<T>(candidates: &mut Vec<(f64, T)>, rng: &mut Pcg64Mcg) -> T {
     let mut prefix_sum = vec![0.0];
 
     for (w, _) in candidates.iter() {
@@ -610,11 +720,11 @@ fn choice<'a, T>(candidates: &'a [(f64, T)], rng: &mut Pcg64Mcg) -> &'a T {
 
     for i in 0..candidates.len() {
         if prefix_sum[i + 1] >= w {
-            return &candidates[i].1;
+            return candidates.swap_remove(i).1;
         }
     }
 
-    &candidates.last().unwrap().1
+    candidates.pop().unwrap().1
 }
 
 #[allow(dead_code)]
