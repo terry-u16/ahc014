@@ -416,8 +416,10 @@ impl State {
     }
 
     fn can_apply(&self, rectangle: &[Vec2; 4]) -> bool {
-        if self.board.is_occupied(rectangle[0]) {
-            return false;
+        for (i, v) in rectangle.iter().enumerate() {
+            if self.board.is_occupied(*v) ^ (i != 0) {
+                return false;
+            }
         }
 
         for (i, &from) in rectangle.iter().enumerate() {
@@ -493,7 +495,7 @@ impl std::fmt::Display for Output {
 
 fn main() {
     let input = Input::read();
-    let output = annealing(&input, State::init(&input), 4.9).to_output();
+    let output = annealing(&input, State::init(&input), 4.95).to_output();
     eprintln!("Elapsed: {}ms", (Instant::now() - input.since).as_millis());
     println!("{}", output);
 }
@@ -523,10 +525,19 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
         let temp = f64::powf(temp0, 1.0 - time) * f64::powf(temp1, time);
 
         // 変形
-        let init_rectangles =
-            &solution.rectangles[0..rng.gen_range(0, solution.rectangles.len() + 1)];
+        let mut init_rectangles = vec![];
 
-        let state = random_greedy(input, init_rectangles, &mut rng);
+        for rect in solution.rectangles.iter() {
+            if rng.gen_bool(0.98) {
+                init_rectangles.push(*rect);
+            }
+        }
+
+        if solution.rectangles.len() != 0 && solution.rectangles.len() == init_rectangles.len() {
+            continue;
+        }
+
+        let state = random_greedy(input, &init_rectangles, &mut rng);
 
         // スコア計算
         let new_score = state.calc_normalized_score(input);
@@ -562,7 +573,9 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
     let mut state = State::init(input);
 
     for rect in init_rectangles {
-        state.apply(input, rect);
+        if state.can_apply(rect) {
+            state.apply(input, rect);
+        }
     }
 
     let mut candidates_pal = vec![];
