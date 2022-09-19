@@ -550,6 +550,7 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
     }
 
     loop {
+        let mut candidates_min = vec![];
         let mut candidates = vec![];
 
         for &p1 in state.points.iter() {
@@ -570,32 +571,47 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
                 let v0 = p1 - p0;
                 let v1 = p3 - p0;
                 let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
-                candidates.push((weight * weight * weight * weight, [p0, p1, p2, p3]));
+                let rectangle = [p0, p1, p2, p3];
+
+                if (v0.norm2_sq() == 1 && v1.norm2_sq() == 1)
+                    || (v0.norm2_sq() == 2 && v1.norm2_sq() == 2)
+                {
+                    candidates_min.push((weight, rectangle));
+                } else {
+                    candidates.push((weight, rectangle));
+                }
             }
         }
 
-        if candidates.len() > 0 {
-            let mut prefix_sum = vec![0.0];
-
-            for (w, _) in candidates.iter() {
-                let w = prefix_sum.last().unwrap() + w;
-                prefix_sum.push(w);
-            }
-
-            let w = rng.gen_range(0.0, *prefix_sum.last().unwrap());
-
-            for i in 0..candidates.len() {
-                if prefix_sum[i + 1] >= w {
-                    state.apply(input, &candidates[i].1);
-                    break;
-                }
-            }
+        if candidates_min.len() > 0 {
+            state.apply(input, &choice(&candidates_min, rng));
+        } else if candidates.len() > 0 {
+            state.apply(input, &choice(&candidates, rng));
         } else {
             break;
         }
     }
 
     state
+}
+
+fn choice<'a, T>(candidates: &'a [(f64, T)], rng: &mut Pcg64Mcg) -> &'a T {
+    let mut prefix_sum = vec![0.0];
+
+    for (w, _) in candidates.iter() {
+        let w = prefix_sum.last().unwrap() + w;
+        prefix_sum.push(w);
+    }
+
+    let w = rng.gen_range(0.0, *prefix_sum.last().unwrap());
+
+    for i in 0..candidates.len() {
+        if prefix_sum[i + 1] >= w {
+            return &candidates[i].1;
+        }
+    }
+
+    &candidates.last().unwrap().1
 }
 
 #[allow(dead_code)]
