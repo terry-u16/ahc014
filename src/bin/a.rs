@@ -578,8 +578,7 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
         }
     }
 
-    let mut candidates_pal = vec![];
-    let mut candidates_diag = vec![];
+    let mut candidates_small = vec![];
     let mut candidates = vec![];
 
     for &p1 in state.points.iter() {
@@ -599,38 +598,32 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
             let weight = input.get_weight(p0) as f64;
             let v0 = p1 - p0;
             let v1 = p3 - p0;
-            let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
             let rectangle = [p0, p1, p2, p3];
 
-            if v0.norm2_sq() == 1 && v1.norm2_sq() == 1 {
-                candidates_pal.push((weight, rectangle));
-            } else if v0.norm2_sq() == 2 && v1.norm2_sq() == 2 {
-                candidates_diag.push((weight, rectangle));
+            if (v0.norm2_sq() == 1 && v1.norm2_sq() == 1)
+                || (v0.norm2_sq() == 2 && v1.norm2_sq() == 2)
+            {
+                candidates_small.push((weight, rectangle));
             } else {
+                let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
                 candidates.push((weight, rectangle));
             }
         }
     }
 
-    let mut sampler_pal = WeightedSampler::<[Vec2; 4]>::new(candidates_pal.len() * 2 + 1);
-    let mut sampler_diag = WeightedSampler::<[Vec2; 4]>::new(candidates_diag.len() * 2 + 1);
+    let mut sampler_small = WeightedSampler::<[Vec2; 4]>::new(candidates_small.len() * 2 + 1);
     let mut sampler = WeightedSampler::<[Vec2; 4]>::new(candidates.len() * 2 + 1);
 
-    for (w, rect) in candidates_pal {
-        sampler_pal.push(rect, w);
-    }
-    for (w, rect) in candidates_diag {
-        sampler_diag.push(rect, w);
+    for (w, rect) in candidates_small {
+        sampler_small.push(rect, w);
     }
     for (w, rect) in candidates {
         sampler.push(rect, w);
     }
 
     loop {
-        let rectangle = if sampler_pal.len() > 0 {
-            sampler_pal.sample(rng)
-        } else if sampler_diag.len() > 0 {
-            sampler_diag.sample(rng)
+        let rectangle = if sampler_small.len() > 0 {
+            sampler_small.sample(rng)
         } else if sampler.len() > 0 {
             sampler.sample(rng)
         } else {
@@ -660,14 +653,14 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
             let weight = input.get_weight(p0) as f64;
             let v0 = p1 - p0;
             let v1 = p3 - p0;
-            let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
             let rectangle = [p0, p1, p2, p3];
 
-            if v0.norm2_sq() == 1 && v1.norm2_sq() == 1 {
-                sampler_pal.push(rectangle, weight);
-            } else if v0.norm2_sq() == 2 && v1.norm2_sq() == 2 {
-                sampler_diag.push(rectangle, weight);
+            if (v0.norm2_sq() == 1 && v1.norm2_sq() == 1)
+                || (v0.norm2_sq() == 2 && v1.norm2_sq() == 2)
+            {
+                sampler_small.push(rectangle, weight);
             } else {
+                let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
                 sampler.push(rectangle, weight);
             }
         }
@@ -690,14 +683,14 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
             let weight = input.get_weight(p0) as f64;
             let v0 = p1 - p0;
             let v1 = p3 - p0;
-            let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
             let rectangle = [p0, p1, p2, p3];
 
-            if v0.norm2_sq() == 1 && v1.norm2_sq() == 1 {
-                sampler_pal.push(rectangle, weight);
-            } else if v0.norm2_sq() == 2 && v1.norm2_sq() == 2 {
-                sampler_diag.push(rectangle, weight);
+            if (v0.norm2_sq() == 1 && v1.norm2_sq() == 1)
+                || (v0.norm2_sq() == 2 && v1.norm2_sq() == 2)
+            {
+                sampler_small.push(rectangle, weight);
             } else {
+                let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
                 sampler.push(rectangle, weight);
             }
         }
@@ -720,14 +713,14 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
             let weight = input.get_weight(p0) as f64;
             let v0 = p1 - p0;
             let v1 = p3 - p0;
-            let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
             let rectangle = [p0, p1, p2, p3];
 
-            if v0.norm2_sq() == 1 && v1.norm2_sq() == 1 {
-                sampler_pal.push(rectangle, weight);
-            } else if v0.norm2_sq() == 2 && v1.norm2_sq() == 2 {
-                sampler_diag.push(rectangle, weight);
+            if (v0.norm2_sq() == 1 && v1.norm2_sq() == 1)
+                || (v0.norm2_sq() == 2 && v1.norm2_sq() == 2)
+            {
+                sampler_small.push(rectangle, weight);
             } else {
+                let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
                 sampler.push(rectangle, weight);
             }
         }
