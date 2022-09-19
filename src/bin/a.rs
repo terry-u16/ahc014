@@ -477,79 +477,125 @@ impl std::fmt::Display for Output {
 
 fn main() {
     let input = Input::read();
-    let output = greedy(&input);
+    let output = annealing(&input, State::init(&input), 4.9).to_output();
     eprintln!("Elapsed: {}ms", (Instant::now() - input.since).as_millis());
     println!("{}", output);
 }
 
-fn greedy(input: &Input) -> Output {
-    let mut best_state = State::init(input);
-    let mut best_score = best_state.score;
-    let mut rng = Pcg64Mcg::new(42);
+fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
+    let mut solution = initial_solution;
+    let mut best_solution = solution.clone();
+    let mut current_score = solution.calc_normalized_score(input);
+    let mut best_score = current_score;
 
-    while (Instant::now() - input.since).as_millis() < 4900 {
+    let mut all_iter = 0;
+    let mut valid_iter = 0;
+    let mut accepted_count = 0;
+    let mut update_count = 0;
+    let mut rng = rand_pcg::Pcg64Mcg::new(42);
+
+    let duration_inv = 1.0 / duration;
+    let since = std::time::Instant::now();
+    let mut time = 0.0;
+
+    let temp0 = 3e4;
+    let temp1 = 1e3;
+
+    while time < 1.0 {
+        all_iter += 1;
+        time = (std::time::Instant::now() - since).as_secs_f64() * duration_inv;
+        let temp = f64::powf(temp0, 1.0 - time) * f64::powf(temp1, time);
+
+        // 変形
         let init_rectangles =
-            &best_state.rectangles[0..rng.gen_range(0, best_state.rectangles.len() + 1)];
+            &solution.rectangles[0..rng.gen_range(0, solution.rectangles.len() + 1)];
 
-        let mut state = State::init(input);
+        let state = random_greedy(input, init_rectangles, &mut rng);
 
-        for rect in init_rectangles {
-            state.apply(input, rect);
-        }
+        // スコア計算
+        let new_score = state.calc_normalized_score(input);
+        let score_diff = new_score - current_score;
 
-        loop {
-            let mut candidates = vec![];
+        if score_diff >= 0 || rng.gen_bool(f64::exp(score_diff as f64 / temp)) {
+            // 解の更新
+            current_score = new_score;
+            accepted_count += 1;
+            solution = state;
 
-            for &p1 in state.points.iter() {
-                for dir in 0..8 {
-                    let p2 = skip_none!(state.board.find_next(p1, dir));
-                    let p3 = skip_none!(state.board.find_next(p2, rot_c(dir)));
-                    let p0 = p1 + (p3 - p2);
-
-                    if !p0.in_map(input.n)
-                        || state.board.is_occupied(p0)
-                        || !state.board.can_connect(p1, p0)
-                        || !state.board.can_connect(p3, p0)
-                    {
-                        continue;
-                    }
-
-                    let weight = input.get_weight(p0) as f64;
-                    let v0 = p1 - p0;
-                    let v1 = p3 - p0;
-                    let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
-                    candidates.push((weight * weight * weight * weight, [p0, p1, p2, p3]));
-                }
-            }
-
-            if candidates.len() > 0 {
-                let mut prefix_sum = vec![0.0];
-
-                for (w, _) in candidates.iter() {
-                    let w = prefix_sum.last().unwrap() + w;
-                    prefix_sum.push(w);
-                }
-
-                let w = rng.gen_range(0.0, *prefix_sum.last().unwrap());
-
-                for i in 0..candidates.len() {
-                    if prefix_sum[i + 1] >= w {
-                        state.apply(input, &candidates[i].1);
-                        break;
-                    }
-                }
-            } else {
-                break;
+            if chmax!(best_score, current_score) {
+                best_solution = solution.clone();
+                update_count += 1;
             }
         }
 
-        if chmax!(best_score, state.score) {
-            best_state = state;
+        valid_iter += 1;
+    }
+
+    eprintln!("===== annealing =====");
+    eprintln!("score      : {}", best_score);
+    eprintln!("all iter   : {}", all_iter);
+    eprintln!("valid iter : {}", valid_iter);
+    eprintln!("accepted   : {}", accepted_count);
+    eprintln!("updated    : {}", update_count);
+    eprintln!("");
+
+    best_solution
+}
+
+fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mcg) -> State {
+    let mut state = State::init(input);
+
+    for rect in init_rectangles {
+        state.apply(input, rect);
+    }
+
+    loop {
+        let mut candidates = vec![];
+
+        for &p1 in state.points.iter() {
+            for dir in 0..8 {
+                let p2 = skip_none!(state.board.find_next(p1, dir));
+                let p3 = skip_none!(state.board.find_next(p2, rot_c(dir)));
+                let p0 = p1 + (p3 - p2);
+
+                if !p0.in_map(input.n)
+                    || state.board.is_occupied(p0)
+                    || !state.board.can_connect(p1, p0)
+                    || !state.board.can_connect(p3, p0)
+                {
+                    continue;
+                }
+
+                let weight = input.get_weight(p0) as f64;
+                let v0 = p1 - p0;
+                let v1 = p3 - p0;
+                let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
+                candidates.push((weight * weight * weight * weight, [p0, p1, p2, p3]));
+            }
+        }
+
+        if candidates.len() > 0 {
+            let mut prefix_sum = vec![0.0];
+
+            for (w, _) in candidates.iter() {
+                let w = prefix_sum.last().unwrap() + w;
+                prefix_sum.push(w);
+            }
+
+            let w = rng.gen_range(0.0, *prefix_sum.last().unwrap());
+
+            for i in 0..candidates.len() {
+                if prefix_sum[i + 1] >= w {
+                    state.apply(input, &candidates[i].1);
+                    break;
+                }
+            }
+        } else {
+            break;
         }
     }
 
-    eprintln!("score: {}", best_state.calc_normalized_score(input));
-    best_state.to_output()
+    state
 }
 
 #[allow(dead_code)]
