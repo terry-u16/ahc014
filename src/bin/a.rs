@@ -517,18 +517,19 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     let mut time = 0.0;
 
     let temp0 = 3e4;
-    let temp1 = 1e3;
+    let temp1 = 3e3;
 
     while time < 1.0 {
         all_iter += 1;
         time = (std::time::Instant::now() - since).as_secs_f64() * duration_inv;
         let temp = f64::powf(temp0, 1.0 - time) * f64::powf(temp1, time);
+        let use_rect_prob = 0.985 + 0.01 * time;
 
         // 変形
         let mut init_rectangles = vec![];
 
         for rect in solution.rectangles.iter() {
-            if rng.gen_bool(0.98) {
+            if rng.gen_bool(use_rect_prob) {
                 init_rectangles.push(*rect);
             }
         }
