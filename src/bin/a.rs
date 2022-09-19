@@ -507,23 +507,26 @@ fn greedy(input: &Input) -> Output {
                         continue;
                     }
 
-                    let weight = input.get_weight(p0) as i64;
-                    candidates.push((weight * weight * weight, [p0, p1, p2, p3]));
+                    let weight = input.get_weight(p0) as f64;
+                    let v0 = p1 - p0;
+                    let v1 = p3 - p0;
+                    let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
+                    candidates.push((weight * weight * weight * weight, [p0, p1, p2, p3]));
                 }
             }
 
             if candidates.len() > 0 {
-                let mut prefix_sum = vec![0];
+                let mut prefix_sum = vec![0.0];
 
                 for (w, _) in candidates.iter() {
                     let w = prefix_sum.last().unwrap() + w;
                     prefix_sum.push(w);
                 }
 
-                let w = rng.gen_range(0, *prefix_sum.last().unwrap());
+                let w = rng.gen_range(0.0, *prefix_sum.last().unwrap());
 
                 for i in 0..candidates.len() {
-                    if prefix_sum[i + 1] > w {
+                    if prefix_sum[i + 1] >= w {
                         state.apply(input, &candidates[i].1);
                         break;
                     }
@@ -593,6 +596,15 @@ mod vector {
         pub fn unit(&self) -> Self {
             debug_assert!(((self.x == 0) ^ (self.y == 0)) || self.x.abs() == self.y.abs());
             Self::new(self.x.signum(), self.y.signum())
+        }
+
+        pub fn norm2(&self) -> f64 {
+            let sq = self.norm2_sq() as f64;
+            sq.sqrt()
+        }
+
+        pub fn norm2_sq(&self) -> i32 {
+            self.x * self.x + self.y * self.y
         }
 
         pub fn to_dir(&self) -> usize {
