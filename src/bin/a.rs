@@ -6,6 +6,7 @@ use proconio::*;
 #[allow(unused_imports)]
 use rand::prelude::*;
 use rand_pcg::Pcg64Mcg;
+use sample::WeightedSampler;
 
 use crate::vector::{inv, rot_c, rot_cc, Vec2};
 
@@ -598,13 +599,27 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
         }
     }
 
+    let mut sampler_pal = WeightedSampler::<[Vec2; 4]>::new(candidates_pal.len() * 2 + 1);
+    let mut sampler_diag = WeightedSampler::<[Vec2; 4]>::new(candidates_diag.len() * 2 + 1);
+    let mut sampler = WeightedSampler::<[Vec2; 4]>::new(candidates.len() * 2 + 1);
+
+    for (w, rect) in candidates_pal {
+        sampler_pal.push(rect, w);
+    }
+    for (w, rect) in candidates_diag {
+        sampler_diag.push(rect, w);
+    }
+    for (w, rect) in candidates {
+        sampler.push(rect, w);
+    }
+
     loop {
-        let rectangle = if candidates_pal.len() > 0 {
-            choice(&mut candidates_pal, rng)
-        } else if candidates_diag.len() > 0 {
-            choice(&mut candidates_diag, rng)
-        } else if candidates.len() > 0 {
-            choice(&mut candidates, rng)
+        let rectangle = if sampler_pal.len() > 0 {
+            sampler_pal.sample(rng)
+        } else if sampler_diag.len() > 0 {
+            sampler_diag.sample(rng)
+        } else if sampler.len() > 0 {
+            sampler.sample(rng)
         } else {
             break;
         };
@@ -636,11 +651,11 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
             let rectangle = [p0, p1, p2, p3];
 
             if v0.norm2_sq() == 1 && v1.norm2_sq() == 1 {
-                candidates_pal.push((weight, rectangle));
+                sampler_pal.push(rectangle, weight);
             } else if v0.norm2_sq() == 2 && v1.norm2_sq() == 2 {
-                candidates_diag.push((weight, rectangle));
+                sampler_diag.push(rectangle, weight);
             } else {
-                candidates.push((weight, rectangle));
+                sampler.push(rectangle, weight);
             }
         }
 
@@ -666,11 +681,11 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
             let rectangle = [p0, p1, p2, p3];
 
             if v0.norm2_sq() == 1 && v1.norm2_sq() == 1 {
-                candidates_pal.push((weight, rectangle));
+                sampler_pal.push(rectangle, weight);
             } else if v0.norm2_sq() == 2 && v1.norm2_sq() == 2 {
-                candidates_diag.push((weight, rectangle));
+                sampler_diag.push(rectangle, weight);
             } else {
-                candidates.push((weight, rectangle));
+                sampler.push(rectangle, weight);
             }
         }
 
@@ -696,11 +711,11 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
             let rectangle = [p0, p1, p2, p3];
 
             if v0.norm2_sq() == 1 && v1.norm2_sq() == 1 {
-                candidates_pal.push((weight, rectangle));
+                sampler_pal.push(rectangle, weight);
             } else if v0.norm2_sq() == 2 && v1.norm2_sq() == 2 {
-                candidates_diag.push((weight, rectangle));
+                sampler_diag.push(rectangle, weight);
             } else {
-                candidates.push((weight, rectangle));
+                sampler.push(rectangle, weight);
             }
         }
     }
@@ -906,6 +921,164 @@ mod vector {
             let v = Vec2::new(2, 1);
             let v = v.rot(1, 4);
             assert_eq!(v, Vec2::new(1, 2));
+        }
+    }
+}
+
+mod sample {
+    use rand::Rng;
+    use rand_pcg::Pcg64Mcg;
+
+    use crate::acl::fenwicktree::FenwickTree;
+
+    pub struct WeightedSampler<T> {
+        n: usize,
+        prob: FenwickTree<f64>,
+        values: Vec<T>,
+    }
+
+    impl<T> WeightedSampler<T> {
+        pub fn new(n: usize) -> Self {
+            let prob = FenwickTree::new(n, 0.0);
+            let values = vec![];
+
+            Self { n, prob, values }
+        }
+
+        pub fn len(&self) -> usize {
+            self.values.len()
+        }
+
+        pub fn push(&mut self, v: T, prob: f64) {
+            let index = self.values.len();
+
+            if index >= self.n {
+                // 長さを倍にする
+                let mut new_prob = FenwickTree::new(2 * self.n, 0.0);
+                let mut sum = 0.0;
+
+                for i in 0..self.n {
+                    let s = self.prob.accum(i + 1);
+                    new_prob.add(i, s - sum);
+                    sum = s;
+                }
+
+                self.n *= 2;
+                self.prob = new_prob;
+            }
+
+            self.values.push(v);
+            self.prob.add(index, prob);
+        }
+
+        pub fn sample(&mut self, rng: &mut Pcg64Mcg) -> T {
+            let v = rng.gen_range(0.0, self.prob.accum(self.n));
+            let index = self.prob.binary_search(v).min(self.len() - 1);
+            let swap_index = self.values.len() - 1;
+            let p0 = self.prob.sum(index, index + 1);
+            let p1 = self.prob.sum(swap_index, swap_index + 1);
+            self.prob.add(index, p1 - p0);
+            self.prob.add(swap_index, -p1);
+
+            self.values.swap_remove(index)
+        }
+    }
+}
+
+mod acl {
+    pub mod fenwicktree {
+        // Reference: https://en.wikipedia.org/wiki/Fenwick_tree
+        pub struct FenwickTree<T> {
+            n: usize,
+            ary: Vec<T>,
+            e: T,
+        }
+
+        impl<T: Clone + std::ops::AddAssign<T>> FenwickTree<T> {
+            pub fn new(n: usize, e: T) -> Self {
+                FenwickTree {
+                    n,
+                    ary: vec![e.clone(); n],
+                    e,
+                }
+            }
+
+            pub fn accum(&self, mut idx: usize) -> T {
+                let mut sum = self.e.clone();
+                while idx > 0 {
+                    sum += self.ary[idx - 1].clone();
+                    idx &= idx - 1;
+                }
+                sum
+            }
+
+            /// performs data[idx] += val;
+            pub fn add<U: Clone>(&mut self, mut idx: usize, val: U)
+            where
+                T: std::ops::AddAssign<U>,
+            {
+                let n = self.n;
+                idx += 1;
+                while idx <= n {
+                    self.ary[idx - 1] += val.clone();
+                    idx += idx & idx.wrapping_neg();
+                }
+            }
+
+            /// Returns data[l] + ... + data[r - 1].
+            pub fn sum(&self, l: usize, r: usize) -> T
+            where
+                T: std::ops::Sub<Output = T>,
+            {
+                self.accum(r) - self.accum(l)
+            }
+        }
+
+        impl<T: PartialOrd + std::ops::SubAssign<T> + Default + Copy> FenwickTree<T> {
+            pub fn binary_search(&self, mut sum: T) -> usize {
+                let depth = 64 - (self.n as u64).leading_zeros();
+                let mut index = 0;
+
+                for i in (0..=depth).rev() {
+                    let k = index + (1 << i);
+                    if k < self.n && self.ary[k - 1] < sum {
+                        sum -= self.ary[k - 1];
+                        index = k;
+                    }
+                }
+
+                index
+            }
+        }
+
+        #[cfg(test)]
+        mod tests {
+            use super::*;
+
+            #[test]
+            fn fenwick_tree_works() {
+                let mut bit = FenwickTree::new(5, 0i64);
+                // [1, 2, 3, 4, 5]
+                for i in 0..5 {
+                    bit.add(i, i as i64 + 1);
+                }
+                assert_eq!(bit.sum(0, 5), 15);
+                assert_eq!(bit.sum(0, 4), 10);
+                assert_eq!(bit.sum(1, 3), 5);
+            }
+
+            #[test]
+            fn binary_search() {
+                let mut bit = FenwickTree::new(5, 0);
+                for i in 0..5 {
+                    bit.add(i, i as i64 + 1);
+                }
+
+                assert_eq!(bit.binary_search(1), 0);
+                assert_eq!(bit.binary_search(9), 3);
+                assert_eq!(bit.binary_search(10), 3);
+                assert_eq!(bit.binary_search(11), 4);
+            }
         }
     }
 }
