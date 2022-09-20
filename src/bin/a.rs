@@ -7,6 +7,7 @@ use proconio::*;
 use rand::prelude::*;
 use rand_pcg::Pcg64Mcg;
 use sample::WeightedSampler;
+use vector::DIR_COUNT;
 
 use crate::vector::{inv, rot_c, rot_cc, Vec2};
 
@@ -582,10 +583,16 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
     let mut candidates_small = vec![];
     let mut candidates = vec![];
 
-    for &p1 in state.points.iter() {
+    let mut next_p = [None; DIR_COUNT];
+
+    for &p2 in state.points.iter() {
+        for (dir, next) in next_p.iter_mut().enumerate() {
+            *next = state.board.find_next(p2, dir);
+        }
+
         for dir in 0..8 {
-            let p2 = skip_none!(state.board.find_next(p1, dir));
-            let p3 = skip_none!(state.board.find_next(p2, rot_c(dir)));
+            let p1 = skip_none!(next_p[dir]);
+            let p3 = skip_none!(next_p[rot_c(dir)]);
             let p0 = p1 + (p3 - p2);
 
             if !p0.in_map(input.n)
@@ -636,10 +643,15 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
         }
 
         state.apply(input, &rectangle);
+
+        for (dir, next) in next_p.iter_mut().enumerate() {
+            *next = state.board.find_next(rectangle[0], dir);
+        }
+
         let p1 = rectangle[0];
 
         for dir in 0..8 {
-            let p2 = skip_none!(state.board.find_next(p1, dir));
+            let p2 = skip_none!(next_p[dir]);
             let p3 = skip_none!(state.board.find_next(p2, rot_c(dir)));
             let p0 = p1 + (p3 - p2);
 
@@ -669,8 +681,8 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
         let p2 = rectangle[0];
 
         for dir in 0..8 {
-            let p1 = skip_none!(state.board.find_next(p2, dir));
-            let p3 = skip_none!(state.board.find_next(p2, rot_cc(dir)));
+            let p1 = skip_none!(next_p[dir]);
+            let p3 = skip_none!(next_p[rot_cc(dir)]);
             let p0 = p1 + (p3 - p2);
 
             if !p0.in_map(input.n)
@@ -699,7 +711,7 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
         let p3 = rectangle[0];
 
         for dir in 0..8 {
-            let p2 = skip_none!(state.board.find_next(p3, dir));
+            let p2 = skip_none!(next_p[dir]);
             let p1 = skip_none!(state.board.find_next(p2, rot_cc(dir)));
             let p0 = p1 + (p3 - p2);
 
