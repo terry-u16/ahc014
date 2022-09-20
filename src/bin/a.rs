@@ -9,7 +9,7 @@ use rand_pcg::Pcg64Mcg;
 use sample::WeightedSampler;
 use vector::DIR_COUNT;
 
-use crate::vector::{inv, rot_c, rot_cc, Vec2};
+use crate::vector::{rot_c, rot_cc, Vec2};
 
 #[allow(unused_macros)]
 macro_rules! chmin {
@@ -334,6 +334,7 @@ mod bitboard {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct Input {
     n: usize,
     m: usize,
@@ -400,6 +401,7 @@ struct State {
     score: i32,
 }
 
+#[allow(dead_code)]
 impl State {
     fn init(input: &Input) -> Self {
         let points = input.p.clone();
@@ -580,9 +582,8 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
         }
     }
 
-    let mut candidates_small = vec![];
-    let mut candidates = vec![];
-
+    let mut sampler_small = WeightedSampler::<[Vec2; 4]>::new(32);
+    let mut sampler = WeightedSampler::<[Vec2; 4]>::new(32);
     let mut next_p = [None; DIR_COUNT];
 
     for &p2 in state.points.iter() {
@@ -595,38 +596,17 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
             let p3 = skip_none!(next_p[rot_c(dir)]);
             let p0 = p1 + (p3 - p2);
 
-            if !p0.in_map(input.n)
-                || state.board.is_occupied(p0)
-                || !state.board.can_connect(p1, p0)
-                || !state.board.can_connect(p3, p0)
-            {
-                continue;
-            }
-
-            let weight = input.get_weight(p0) as f64;
-            let v0 = p1 - p0;
-            let v1 = p3 - p0;
-            let rectangle = [p0, p1, p2, p3];
-
-            if (v0.norm2_sq() == 1 && v1.norm2_sq() == 1)
-                || (v0.norm2_sq() == 2 && v1.norm2_sq() == 2)
-            {
-                candidates_small.push((weight, rectangle));
-            } else {
-                let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
-                candidates.push((weight, rectangle));
-            }
+            try_add_candidate(
+                input,
+                &state,
+                p0,
+                p1,
+                p2,
+                p3,
+                &mut sampler_small,
+                &mut sampler,
+            )
         }
-    }
-
-    let mut sampler_small = WeightedSampler::<[Vec2; 4]>::new(candidates_small.len() * 2 + 1);
-    let mut sampler = WeightedSampler::<[Vec2; 4]>::new(candidates.len() * 2 + 1);
-
-    for (w, rect) in candidates_small {
-        sampler_small.push(rect, w);
-    }
-    for (w, rect) in candidates {
-        sampler.push(rect, w);
     }
 
     loop {
@@ -655,27 +635,16 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
             let p3 = skip_none!(state.board.find_next(p2, rot_c(dir)));
             let p0 = p1 + (p3 - p2);
 
-            if !p0.in_map(input.n)
-                || state.board.is_occupied(p0)
-                || !state.board.can_connect(p1, p0)
-                || !state.board.can_connect(p3, p0)
-            {
-                continue;
-            }
-
-            let weight = input.get_weight(p0) as f64;
-            let v0 = p1 - p0;
-            let v1 = p3 - p0;
-            let rectangle = [p0, p1, p2, p3];
-
-            if (v0.norm2_sq() == 1 && v1.norm2_sq() == 1)
-                || (v0.norm2_sq() == 2 && v1.norm2_sq() == 2)
-            {
-                sampler_small.push(rectangle, weight);
-            } else {
-                let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
-                sampler.push(rectangle, weight);
-            }
+            try_add_candidate(
+                input,
+                &state,
+                p0,
+                p1,
+                p2,
+                p3,
+                &mut sampler_small,
+                &mut sampler,
+            )
         }
 
         let p2 = rectangle[0];
@@ -685,27 +654,16 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
             let p3 = skip_none!(next_p[rot_cc(dir)]);
             let p0 = p1 + (p3 - p2);
 
-            if !p0.in_map(input.n)
-                || state.board.is_occupied(p0)
-                || !state.board.can_connect(p1, p0)
-                || !state.board.can_connect(p3, p0)
-            {
-                continue;
-            }
-
-            let weight = input.get_weight(p0) as f64;
-            let v0 = p1 - p0;
-            let v1 = p3 - p0;
-            let rectangle = [p0, p1, p2, p3];
-
-            if (v0.norm2_sq() == 1 && v1.norm2_sq() == 1)
-                || (v0.norm2_sq() == 2 && v1.norm2_sq() == 2)
-            {
-                sampler_small.push(rectangle, weight);
-            } else {
-                let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
-                sampler.push(rectangle, weight);
-            }
+            try_add_candidate(
+                input,
+                &state,
+                p0,
+                p1,
+                p2,
+                p3,
+                &mut sampler_small,
+                &mut sampler,
+            )
         }
 
         let p3 = rectangle[0];
@@ -715,50 +673,51 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
             let p1 = skip_none!(state.board.find_next(p2, rot_cc(dir)));
             let p0 = p1 + (p3 - p2);
 
-            if !p0.in_map(input.n)
-                || state.board.is_occupied(p0)
-                || !state.board.can_connect(p1, p0)
-                || !state.board.can_connect(p3, p0)
-            {
-                continue;
-            }
-
-            let weight = input.get_weight(p0) as f64;
-            let v0 = p1 - p0;
-            let v1 = p3 - p0;
-            let rectangle = [p0, p1, p2, p3];
-
-            if (v0.norm2_sq() == 1 && v1.norm2_sq() == 1)
-                || (v0.norm2_sq() == 2 && v1.norm2_sq() == 2)
-            {
-                sampler_small.push(rectangle, weight);
-            } else {
-                let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
-                sampler.push(rectangle, weight);
-            }
+            try_add_candidate(
+                input,
+                &state,
+                p0,
+                p1,
+                p2,
+                p3,
+                &mut sampler_small,
+                &mut sampler,
+            )
         }
     }
 
     state
 }
 
-fn choice<T>(candidates: &mut Vec<(f64, T)>, rng: &mut Pcg64Mcg) -> T {
-    let mut prefix_sum = vec![0.0];
-
-    for (w, _) in candidates.iter() {
-        let w = prefix_sum.last().unwrap() + w;
-        prefix_sum.push(w);
+fn try_add_candidate(
+    input: &Input,
+    state: &State,
+    p0: Vec2,
+    p1: Vec2,
+    p2: Vec2,
+    p3: Vec2,
+    sampler_small: &mut WeightedSampler<[Vec2; 4]>,
+    sampler: &mut WeightedSampler<[Vec2; 4]>,
+) {
+    if !p0.in_map(input.n)
+        || state.board.is_occupied(p0)
+        || !state.board.can_connect(p1, p0)
+        || !state.board.can_connect(p3, p0)
+    {
+        return;
     }
 
-    let w = rng.gen_range(0.0, *prefix_sum.last().unwrap());
+    let weight = input.get_weight(p0) as f64;
+    let v0 = p1 - p0;
+    let v1 = p3 - p0;
+    let rectangle = [p0, p1, p2, p3];
 
-    for i in 0..candidates.len() {
-        if prefix_sum[i + 1] >= w {
-            return candidates.swap_remove(i).1;
-        }
+    if (v0.norm2_sq() == 1 && v1.norm2_sq() == 1) || (v0.norm2_sq() == 2 && v1.norm2_sq() == 2) {
+        sampler_small.push(rectangle, weight);
+    } else {
+        let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
+        sampler.push(rectangle, weight);
     }
-
-    candidates.pop().unwrap().1
 }
 
 #[allow(dead_code)]
