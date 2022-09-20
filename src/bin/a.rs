@@ -529,7 +529,7 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
         let use_rect_prob = 0.985 + 0.01 * time;
 
         // 変形
-        let mut init_rectangles = vec![];
+        let mut init_rectangles = Vec::with_capacity(solution.rectangles.len());
 
         for rect in solution.rectangles.iter() {
             if rng.gen_bool(use_rect_prob) {
@@ -575,6 +575,7 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
 
 fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mcg) -> State {
     let mut state = State::init(input);
+    state.rectangles.reserve(init_rectangles.len() * 3 / 2);
 
     for rect in init_rectangles {
         if state.can_apply(rect) {
