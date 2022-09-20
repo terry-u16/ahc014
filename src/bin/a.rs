@@ -712,10 +712,13 @@ fn try_add_candidate(
     let v1 = p3 - p0;
     let rectangle = [p0, p1, p2, p3];
 
-    if (v0.norm2_sq() == 1 && v1.norm2_sq() == 1) || (v0.norm2_sq() == 2 && v1.norm2_sq() == 2) {
+    let norm0 = v0.norm2_sq();
+    let norm1 = v1.norm2_sq();
+
+    if (norm0 == 1 && norm1 == 1) || (norm0 == 2 && norm1 == 2) {
         sampler_small.push(rectangle, weight);
     } else {
-        let weight = weight / (v0.norm2_sq() + v1.norm2_sq()) as f64;
+        let weight = weight / (norm0 + norm1) as f64;
         sampler.push(rectangle, weight);
     }
 }
