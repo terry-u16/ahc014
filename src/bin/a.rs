@@ -911,14 +911,14 @@ mod sample {
 
     pub struct WeightedSampler<T> {
         n: usize,
-        prob: Vec<f64>,
+        prob: FenwickTree<f64>,
         values: Vec<T>,
     }
 
     impl<T> WeightedSampler<T> {
         pub fn new(n: usize) -> Self {
+            let prob = FenwickTree::new(n, 0.0);
             let values = vec![];
-            let prob = vec![];
 
             Self { n, prob, values }
         }
@@ -928,24 +928,36 @@ mod sample {
         }
 
         pub fn push(&mut self, v: T, prob: f64) {
-            self.prob.push(prob);
+            let index = self.values.len();
+
+            if index >= self.n {
+                // 長さを倍にする
+                let mut new_prob = FenwickTree::new(2 * self.n, 0.0);
+                let mut sum = 0.0;
+
+                for i in 0..self.n {
+                    let s = self.prob.accum(i + 1);
+                    new_prob.add(i, s - sum);
+                    sum = s;
+                }
+
+                self.n *= 2;
+                self.prob = new_prob;
+            }
+
             self.values.push(v);
+            self.prob.add(index, prob);
         }
 
         pub fn sample(&mut self, rng: &mut Pcg64Mcg) -> T {
-            let p = rng.gen_range(0.0, self.prob.last().unwrap());
-            let mut sum = 0.0;
-            let mut index = self.prob.len() - 1;
+            let v = rng.gen_range(0.0, self.prob.accum(self.n));
+            let index = self.prob.binary_search(v).min(self.len() - 1);
+            let swap_index = self.values.len() - 1;
+            let p0 = self.prob.sum(index, index + 1);
+            let p1 = self.prob.sum(swap_index, swap_index + 1);
+            self.prob.add(index, p1 - p0);
+            self.prob.add(swap_index, -p1);
 
-            for (i, pi) in self.prob.iter().enumerate() {
-                sum += pi;
-                if p <= sum {
-                    index = i;
-                    break;
-                }
-            }
-
-            self.prob.swap_remove(index);
             self.values.swap_remove(index)
         }
     }
