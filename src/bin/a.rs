@@ -513,7 +513,7 @@ impl std::fmt::Display for Output {
 
 fn main() {
     let input = Input::read();
-    let output = annealing(&input, State::init(&input), 4.95).to_output();
+    let output = annealing(&input, State::init(&input), 4.98).to_output();
     eprintln!("Elapsed: {}ms", (Instant::now() - input.since).as_millis());
     println!("{}", output);
 }
