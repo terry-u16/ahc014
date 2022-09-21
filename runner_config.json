@@ -5,7 +5,7 @@
   },
   "RunnerOption": {
     "StartSeed": 0,
-    "EndSeed": 100,
+    "EndSeed": 200,
     "ReferenceScore": 1000000,
     "LocalParallelCount": 32,
     "CloudParallelCount": 300,
@@ -14,7 +14,7 @@
   "ExecutionOption": {
     "ScoreRegex": "Score = (?<score>\\d+)",
     "SeedFormat": "0000",
-    "Timeout": "00:00:50",
+    "Timeout": "00:00:30",
     "LocalExecutionSteps": [
       {
         "ExecutionCommand": "ahc014-a.exe",
