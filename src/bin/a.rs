@@ -159,7 +159,7 @@ mod bitboard {
     pub struct Board {
         n: usize,
         points: [Vec<Bitset>; DIR_COUNT],
-        edges: [Vec<Bitset>; DIR_COUNT],
+        edges: [Vec<Bitset>; DIR_COUNT / 2],
     }
 
     impl Board {
@@ -174,7 +174,12 @@ mod bitboard {
                 vec![Bitset::default(); n],
                 vec![Bitset::default(); 2 * n - 1],
             ];
-            let edges = points.clone();
+            let edges = [
+                vec![Bitset::default(); n],
+                vec![Bitset::default(); 2 * n - 1],
+                vec![Bitset::default(); n],
+                vec![Bitset::default(); 2 * n - 1],
+            ];
 
             for p in init_points.iter() {
                 for (dir, points) in points.iter_mut().enumerate() {
@@ -194,8 +199,18 @@ mod bitboard {
             if let Some(next) = next {
                 let unit = UNITS[dir];
                 let d = next as i32 - v_rot.x;
-                let has_edge = self.edges[dir][v_rot.y as usize]
-                    .contains_range(v_rot.x as u32, (v_rot.x + d) as u32);
+
+                let (x1, x2, y, dir) = if (dir & 4) == 0 {
+                    (v_rot.x, v_rot.x + d, v_rot.y, dir)
+                } else {
+                    let dir = dir & 3;
+                    let v_rot = v.rot(dir, self.n);
+                    let x1 = v_rot.x - d;
+                    let x2 = v_rot.x;
+                    (x1, x2, v_rot.y, dir)
+                };
+
+                let has_edge = self.edges[dir][y as usize].contains_range(x1 as u32, x2 as u32);
 
                 if has_edge {
                     None
@@ -215,7 +230,7 @@ mod bitboard {
 
         #[inline]
         pub fn can_connect(&self, v1: Vec2, v2: Vec2) -> bool {
-            let (dir, y, x1, x2) = self.get_rot(v1, v2);
+            let (dir, y, x1, x2) = self.get_rot4(v1, v2);
             let has_point = self.points[dir][y].contains_range(x1 + 1, x2);
             let has_edge = self.edges[dir][y].contains_range(x1, x2);
             !has_point && !has_edge
@@ -238,30 +253,28 @@ mod bitboard {
         #[inline]
         pub fn connect(&mut self, v1: Vec2, v2: Vec2) {
             self.connect_inner(v1, v2);
-            self.connect_inner(v2, v1);
         }
 
         #[inline]
         pub fn disconnect(&mut self, v1: Vec2, v2: Vec2) {
             self.disconnect_inner(v1, v2);
-            self.disconnect_inner(v2, v1);
         }
 
         #[inline]
         fn connect_inner(&mut self, v1: Vec2, v2: Vec2) {
-            let (dir, y, x1, x2) = self.get_rot(v1, v2);
+            let (dir, y, x1, x2) = self.get_rot4(v1, v2);
             self.edges[dir][y].set_range(x1, x2);
         }
 
         #[inline]
         fn disconnect_inner(&mut self, v1: Vec2, v2: Vec2) {
-            let (dir, y, x1, x2) = self.get_rot(v1, v2);
+            let (dir, y, x1, x2) = self.get_rot4(v1, v2);
             self.edges[dir][y].unset_range(x1, x2);
         }
 
         #[inline]
-        fn get_rot(&self, v1: Vec2, v2: Vec2) -> (usize, usize, u32, u32) {
-            let dir = (v2 - v1).unit().to_dir();
+        fn get_rot4(&self, v1: Vec2, v2: Vec2) -> (usize, usize, u32, u32) {
+            let dir = (v2 - v1).unit().to_dir() & 3;
             let v1_rot = v1.rot(dir, self.n);
             let v2_rot = v2.rot(dir, self.n);
 
@@ -269,6 +282,8 @@ mod bitboard {
             let y = v1_rot.y as usize;
             let x1 = v1_rot.x as u32;
             let x2 = v2_rot.x as u32;
+
+            let (x1, x2) = if x1 <= x2 { (x1, x2) } else { (x2, x1) };
 
             (dir, y, x1, x2)
         }
