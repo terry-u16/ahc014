@@ -532,14 +532,18 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
 
     let duration_inv = 1.0 / duration;
     let since = std::time::Instant::now();
-    let mut time = 0.0;
 
     let temp0 = 3e4;
     let temp1 = 3e3;
 
-    while time < 1.0 {
+    loop {
         all_iter += 1;
-        time = (std::time::Instant::now() - since).as_secs_f64() * duration_inv;
+        let time = (std::time::Instant::now() - since).as_secs_f64() * duration_inv;
+
+        if time >= 1.0 {
+            break;
+        }
+
         let temp = f64::powf(temp0, 1.0 - time) * f64::powf(temp1, time);
         let use_rect_prob = 0.985 + 0.01 * time;
 
