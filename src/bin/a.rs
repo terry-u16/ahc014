@@ -513,39 +513,12 @@ impl std::fmt::Display for Output {
 
 fn main() {
     let input = Input::read();
-    let output = solve(&input);
+    let output = annealing(&input, State::init(&input), 4.98).to_output();
     eprintln!("Elapsed: {}ms", (Instant::now() - input.since).as_millis());
     println!("{}", output);
 }
 
-fn solve(input: &Input) -> Output {
-    let mut best_state = State::init(input);
-    let mut best_score = best_state.calc_normalized_score(input);
-    const TRIAL_COUNT: usize = 5;
-    const TRIAL_DURATION: f64 = 1.0;
-
-    for i in 0..TRIAL_COUNT {
-        let duration = TRIAL_DURATION / TRIAL_COUNT as f64;
-        let seed = i as u128 + 42;
-        let state = annealing(input, State::init(&input), duration, 3e4, 5e3, seed);
-        if chmax!(best_score, state.calc_normalized_score(input)) {
-            best_state = state;
-        }
-    }
-
-    let elapsed = (Instant::now() - input.since).as_secs_f64();
-    let state = annealing(&input, best_state, 4.98 - elapsed, 1e4, 3e3, 42);
-    state.to_output()
-}
-
-fn annealing(
-    input: &Input,
-    initial_solution: State,
-    duration: f64,
-    temp0: f64,
-    temp1: f64,
-    seed: u128,
-) -> State {
+fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     let mut solution = initial_solution;
     let mut best_solution = solution.clone();
     let mut current_score = solution.calc_normalized_score(input);
@@ -555,19 +528,18 @@ fn annealing(
     let mut valid_iter = 0;
     let mut accepted_count = 0;
     let mut update_count = 0;
-    let mut rng = rand_pcg::Pcg64Mcg::new(seed);
+    let mut rng = rand_pcg::Pcg64Mcg::new(42);
 
     let duration_inv = 1.0 / duration;
     let since = std::time::Instant::now();
+    let mut time = 0.0;
 
-    loop {
+    let temp0 = 3e4;
+    let temp1 = 3e3;
+
+    while time < 1.0 {
         all_iter += 1;
-        let time = (std::time::Instant::now() - since).as_secs_f64() * duration_inv;
-
-        if time >= 1.0 {
-            break;
-        }
-
+        time = (std::time::Instant::now() - since).as_secs_f64() * duration_inv;
         let temp = f64::powf(temp0, 1.0 - time) * f64::powf(temp1, time);
         let use_rect_prob = 0.985 + 0.01 * time;
 
