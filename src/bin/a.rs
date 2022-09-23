@@ -536,8 +536,15 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     let temp0 = 3e4;
     let temp1 = 3e3;
 
+    let export_movie = std::env::var("MOVIE").is_ok();
+
     loop {
         all_iter += 1;
+
+        if export_movie && all_iter % 1000 == 0 {
+            println!("{}", solution.to_output());
+        }
+
         let time = (std::time::Instant::now() - since).as_secs_f64() * duration_inv;
 
         if time >= 1.0 {

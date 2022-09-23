@@ -2,4 +2,10 @@ data/
 
 *.exe
 *.txt
+*.csv
+*.mp4
 vis.html
+
+Visualizer/.vs
+Visualizer/Visualizer/bin
+Visualizer/Visualizer/obj
