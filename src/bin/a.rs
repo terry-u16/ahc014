@@ -536,13 +536,15 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     let temp0 = 3e4;
     let temp1 = 3e3;
 
+    const MOVIE_FRAME_COUNT: usize = 300;
     let export_movie = std::env::var("MOVIE").is_ok();
+    let mut movie = vec![];
 
     loop {
         all_iter += 1;
 
-        if export_movie && all_iter % 1000 == 0 {
-            println!("{}", solution.to_output());
+        if export_movie {
+            movie.push(solution.to_output());
         }
 
         let time = (std::time::Instant::now() - since).as_secs_f64() * duration_inv;
@@ -595,6 +597,18 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     eprintln!("accepted   : {}", accepted_count);
     eprintln!("updated    : {}", update_count);
     eprintln!("");
+
+    if export_movie {
+        if movie.len() <= MOVIE_FRAME_COUNT {
+            for output in movie {
+                println!("{}", output);
+            }
+        } else {
+            for i in 0..MOVIE_FRAME_COUNT {
+                println!("{}", movie[i * movie.len() / MOVIE_FRAME_COUNT]);
+            }
+        }
+    }
 
     best_solution
 }
