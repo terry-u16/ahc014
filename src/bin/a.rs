@@ -266,7 +266,7 @@ mod bitboard {
             self.disconnect_inner(v1, v2);
         }
 
-        pub fn get_range_popcnt(&self, x0: usize, x1: usize, y0: usize, y1: usize) -> usize {
+        pub fn get_range_popcnt(&self, x0: usize, y0: usize, x1: usize, y1: usize) -> usize {
             let mut count = 0;
 
             for y in y0..y1 {
@@ -556,6 +556,9 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     let export_movie = std::env::var("MOVIE").is_ok();
     let mut movie = vec![];
 
+    const NOT_IMPROVED_THRESHOLD: usize = 10000;
+    let mut not_improved = 0;
+
     loop {
         all_iter += 1;
 
@@ -572,7 +575,7 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
         let x1 = rng.gen_range(x0 + 1, input.n);
         let y0 = rng.gen_range(0, input.n - 1);
         let y1 = rng.gen_range(y0 + 1, input.n);
-        let count = solution.board.get_range_popcnt(x0, x1, y0, y1);
+        let count = solution.board.get_range_popcnt(x0, y0, x1, y1);
 
         if (solution.rectangles.len() != 0 && count == 0) || count >= 50 {
             continue;
@@ -609,6 +612,15 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
             if chmax!(best_score, current_score) {
                 best_solution = solution.clone();
                 update_count += 1;
+                not_improved = 0;
+            } else {
+                not_improved += 1;
+
+                if not_improved >= NOT_IMPROVED_THRESHOLD {
+                    solution = best_solution.clone();
+                    current_score = best_score;
+                    not_improved = 0;
+                }
             }
         }
 
