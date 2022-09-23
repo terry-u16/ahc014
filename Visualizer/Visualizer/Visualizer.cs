@@ -17,7 +17,7 @@ public class Visualizer
     private const int GraphWidthThick = 4;
     private const int GraphWidthRegular = 2;
     private const int GraphWidthThin = 1;
-    private const int FontSize = 70;
+    private const int FontSize = 80;
     private static readonly Vector2 OriginalPoint = new Vector2(CanvasPadding, CanvasPadding);
     private static readonly SKColor White = new(0xFF, 0xFF, 0xFF);
     private static readonly SKColor Black = new(0x20, 0x20, 0x20);
@@ -120,11 +120,12 @@ public class Visualizer
         {
             Color = Black,
             TextSize = FontSize,
+            Typeface = SKTypeface.FromFamilyName("Consolas"),
             IsAntialias = true
         };
 
         var point = new SKPoint(1100, CanvasPadding + 200);
-        canvas.DrawText($"Score: {solution.Score}", point, paint);
+        canvas.DrawText($"Score: {solution.Score,7}", point, paint);
     }
 
     private void DrawGraph(SKCanvas canvas, IReadOnlyList<Solution> solutions, int index)
