@@ -14,11 +14,14 @@ public class Visualizer
     private const int RectRadius = 7;
     private const int GridRadius = 3;
     private const int StrokeWidth = 2;
-    private const int GraphWidth = 1;
+    private const int GraphWidthThick = 4;
+    private const int GraphWidthRegular = 2;
+    private const int GraphWidthThin = 1;
     private const int FontSize = 70;
     private static readonly Vector2 OriginalPoint = new Vector2(CanvasPadding, CanvasPadding);
     private static readonly SKColor White = new(0xFF, 0xFF, 0xFF);
     private static readonly SKColor Black = new(0x20, 0x20, 0x20);
+    private static readonly SKColor DarkGray = new(0x40, 0x40, 0x40);
     private static readonly SKColor Gray = new(0xB0, 0xB0, 0xB0);
     private static readonly SKColor LightGray = new(0xF0, 0xF0, 0xF0);
     private static readonly SKColor Blue = new(0x3D, 0x79, 0xF7);
@@ -73,7 +76,7 @@ public class Visualizer
         {
             Style = SKPaintStyle.Stroke,
             StrokeWidth = StrokeWidth,
-            Color = Black,
+            Color = DarkGray,
             IsAntialias = true
         };
 
@@ -90,7 +93,7 @@ public class Visualizer
         using var pointPaint = new SKPaint
         {
             Style = SKPaintStyle.Fill,
-            Color = Black,
+            Color = DarkGray,
             IsAntialias = true
         };
 
@@ -100,9 +103,13 @@ public class Visualizer
             canvas.DrawCircle(v0, RectRadius, pointPaint);
         }
 
+        var scoreMax = _input.CalculatePointScore(new Vector2(0, (float)(_input.N - 1) / 2));
+
         foreach (var rectangle in solution.Rectangles)
         {
             var v0 = ToWindowCoordinate(rectangle[0]);
+            var score = _input.CalculatePointScore(rectangle[0]);
+            pointPaint.Color = Interpolate(Blue, Red, score / scoreMax);
             canvas.DrawCircle(v0, RectRadius, pointPaint);
         }
     }
@@ -126,6 +133,7 @@ public class Visualizer
         const int right = CanvasWidthWithPadding - CanvasPadding;
         const int top = 250 + CanvasPadding;
         const int bottom = 850 + CanvasPadding;
+        const float maxScore = 3e6f;
 
         float GetX(float x) => (right - left) * x + left;
         float GetY(float y) => (top - bottom) * y + bottom;
@@ -133,10 +141,11 @@ public class Visualizer
         using var paint = new SKPaint
         {
             Style = SKPaintStyle.Stroke,
-            StrokeWidth = StrokeWidth,
+            StrokeWidth = GraphWidthRegular,
             Color = Gray,
             IsAntialias = true
         };
+
 
         for (int i = 1; i <= 2; i++)
         {
@@ -144,6 +153,7 @@ public class Visualizer
         }
 
         paint.Color = LightGray;
+        paint.StrokeWidth = GraphWidthThin;
 
         for (int i = 0; i < 30; i++)
         {
@@ -156,15 +166,19 @@ public class Visualizer
         }
 
         paint.Color = Blue;
+        paint.StrokeWidth = GraphWidthThick;
+        paint.StrokeJoin = SKStrokeJoin.Round;
+        var path = new SKPath();
+        path.MoveTo(GetX(0), GetY(solutions[0].Score / maxScore));
 
-        for (int i = 0; i + 1 < solutions.Count; i++)
+        for (int i = 1; i < solutions.Count; i++)
         {
-            var x0 = GetX((float)i / (solutions.Count - 1));
-            var x1 = GetX((float)(i + 1) / (solutions.Count - 1));
-            var y0 = GetY((float)solutions[i].Score / 3_000_000);
-            var y1 = GetY((float)solutions[i + 1].Score / 3_000_000);
-            canvas.DrawLine(x0, y0, x1, y1, paint);
+            var x = GetX((float)i / (solutions.Count - 1));
+            var y = GetY(solutions[i].Score / maxScore);
+            path.LineTo(x, y);
         }
+
+        canvas.DrawPath(path, paint);
 
         paint.Color = Black;
         canvas.DrawRect(left, top, right - left, bottom - top, paint);
@@ -178,5 +192,14 @@ public class Visualizer
     {
         var vec = v * _unitLength + OriginalPoint;
         return new SKPoint(vec.X, CanvasHeightWithPadding - vec.Y);
+    }
+
+    private SKColor Interpolate(SKColor c0, SKColor c1, double x)
+    {
+        x = Math.Max(Math.Min(x, 1), 0);
+        var r = (byte)Math.Round(c0.Red * (1 - x) + c1.Red * x);
+        var g = (byte)Math.Round(c0.Green * (1 - x) + c1.Green * x);
+        var b = (byte)Math.Round(c0.Blue * (1 - x) + c1.Blue * x);
+        return new SKColor(r, g, b);
     }
 }
