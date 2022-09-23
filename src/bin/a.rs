@@ -143,6 +143,12 @@ mod bitboard {
         }
 
         #[inline]
+        fn get_range_popcnt(&self, begin: u32, end: u32) -> u32 {
+            let mask = Self::get_range_mask(begin, end);
+            (self.v & mask).count_ones()
+        }
+
+        #[inline]
         fn get_range_mask(begin: u32, end: u32) -> u64 {
             debug_assert!(end >= begin);
             ((1 << end) - 1) ^ ((1 << begin) - 1)
@@ -258,6 +264,16 @@ mod bitboard {
         #[inline]
         pub fn disconnect(&mut self, v1: Vec2, v2: Vec2) {
             self.disconnect_inner(v1, v2);
+        }
+
+        pub fn get_range_popcnt(&self, x0: usize, x1: usize, y0: usize, y1: usize) -> usize {
+            let mut count = 0;
+
+            for y in y0..y1 {
+                count += self.points[0][y].get_range_popcnt(x0 as u32, x1 as u32);
+            }
+
+            count as usize
         }
 
         #[inline]
@@ -543,10 +559,6 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     loop {
         all_iter += 1;
 
-        if export_movie {
-            movie.push(solution.to_output());
-        }
-
         let time = (std::time::Instant::now() - since).as_secs_f64() * duration_inv;
 
         if time >= 1.0 {
@@ -554,14 +566,27 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
         }
 
         let temp = f64::powf(temp0, 1.0 - time) * f64::powf(temp1, time);
-        let use_rect_prob = 0.985 + 0.01 * time;
 
         // 変形
+        let x0 = rng.gen_range(0, input.n - 1);
+        let x1 = rng.gen_range(x0 + 1, input.n);
+        let y0 = rng.gen_range(0, input.n - 1);
+        let y1 = rng.gen_range(y0 + 1, input.n);
+        let count = solution.board.get_range_popcnt(x0, x1, y0, y1);
+
+        if (solution.rectangles.len() != 0 && count == 0) || count >= 50 {
+            continue;
+        }
+
         let mut init_rectangles = Vec::with_capacity(solution.rectangles.len());
 
         for rect in solution.rectangles.iter() {
-            if rng.gen_bool(use_rect_prob) {
-                init_rectangles.push(*rect);
+            let p = rect[0];
+            let x = p.x as usize;
+            let y = p.y as usize;
+
+            if !(x0 <= x && x < x1 && y0 <= y && y < y1) {
+                init_rectangles.push(rect.clone());
             }
         }
 
@@ -585,6 +610,10 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
                 best_solution = solution.clone();
                 update_count += 1;
             }
+        }
+
+        if export_movie {
+            movie.push(solution.to_output());
         }
 
         valid_iter += 1;
