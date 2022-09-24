@@ -624,7 +624,7 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
             }
         }
 
-        if export_movie {
+        if export_movie && valid_iter % 10 == 0 {
             movie.push(solution.to_output());
         }
 
