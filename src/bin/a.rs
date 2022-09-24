@@ -898,23 +898,26 @@ mod vector {
             let n = n as i32;
 
             // 180°回転
-            let cond = ((dir >> 2) & 1) as i32 - 1;
-            v.x = (cond & v.x) | (!cond & (n - 1 - v.x));
-            v.y = (cond & v.y) | (!cond & (n - 1 - v.y));
+            if ((dir >> 2) & 1) > 0 {
+                v.x = n - 1 - v.x;
+                v.y = n - 1 - v.y;
+            }
 
             // 90°回転
-            let cond = ((dir >> 1) & 1) as i32 - 1;
-            let x = v.y;
-            let y = n - 1 - v.x;
-            v.x = (cond & v.x) | (!cond & x);
-            v.y = (cond & v.y) | (!cond & y);
+            if ((dir >> 1) & 1) > 0 {
+                let x = v.y;
+                let y = n - 1 - v.x;
+                v.x = x;
+                v.y = y;
+            }
 
             // 45°回転
-            let cond = (dir & 1) as i32 - 1;
-            let x = (v.x + v.y) >> 1;
-            let y = n - 1 - v.x + v.y;
-            v.x = (cond & v.x) | (!cond & x);
-            v.y = (cond & v.y) | (!cond & y);
+            if (dir & 1) > 0 {
+                let x = (v.x + v.y) >> 1;
+                let y = n - 1 - v.x + v.y;
+                v.x = x;
+                v.y = y;
+            }
 
             v
         }
