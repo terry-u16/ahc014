@@ -88,30 +88,25 @@ mod bitboard {
     }
 
     impl Bitset {
-        #[inline]
         #[allow(dead_code)]
         const fn new(v: u64) -> Self {
             Self { v }
         }
 
-        #[inline]
         fn at(&self, i: u32) -> bool {
             ((self.v >> i) & 1) > 0
         }
 
-        #[inline]
         fn set(&mut self, i: u32) {
             debug_assert!(((self.v >> i) & 1) == 0);
             self.v ^= 1 << i;
         }
 
-        #[inline]
         fn unset(&mut self, i: u32) {
             debug_assert!(((self.v >> i) & 1) > 0);
             self.v ^= 1 << i;
         }
 
-        #[inline]
         fn find_next(&self, begin: u32) -> Option<u32> {
             let v = self.v >> begin;
             if v == 0 {
@@ -122,32 +117,27 @@ mod bitboard {
             }
         }
 
-        #[inline]
         fn contains_range(&self, begin: u32, end: u32) -> bool {
             debug_assert!(begin <= end);
             (self.v & Self::get_range_mask(begin, end)) > 0
         }
 
-        #[inline]
         fn set_range(&mut self, begin: u32, end: u32) {
             debug_assert!(!self.contains_range(begin, end));
             self.v ^= Self::get_range_mask(begin, end);
         }
 
-        #[inline]
         fn unset_range(&mut self, begin: u32, end: u32) {
             let mask = Self::get_range_mask(begin, end);
             debug_assert!((self.v & mask) == mask);
             self.v ^= mask;
         }
 
-        #[inline]
         fn get_range_popcnt(&self, begin: u32, end: u32) -> u32 {
             let mask = Self::get_range_mask(begin, end);
             (self.v & mask).count_ones()
         }
 
-        #[inline]
         fn get_range_mask(begin: u32, end: u32) -> u64 {
             debug_assert!(end >= begin);
             ((1 << end) - 1) ^ ((1 << begin) - 1)
@@ -196,7 +186,6 @@ mod bitboard {
             Self { n, points, edges }
         }
 
-        #[inline]
         pub fn find_next(&self, v: Vec2, dir: usize) -> Option<Vec2> {
             let v_rot = v.rot(dir, self.n);
             let next = self.points[dir][v_rot.y as usize].find_next(v_rot.x as u32 + 1);
@@ -228,12 +217,10 @@ mod bitboard {
             }
         }
 
-        #[inline]
         pub fn is_occupied(&self, v1: Vec2) -> bool {
             self.points[0][v1.y as usize].at(v1.x as u32)
         }
 
-        #[inline]
         pub fn can_connect(&self, v1: Vec2, v2: Vec2) -> bool {
             let (dir, y, x1, x2) = self.get_rot4(v1, v2);
             let has_point = self.points[dir][y].contains_range(x1 + 1, x2);
@@ -255,12 +242,10 @@ mod bitboard {
             }
         }
 
-        #[inline]
         pub fn connect(&mut self, v1: Vec2, v2: Vec2) {
             self.connect_inner(v1, v2);
         }
 
-        #[inline]
         pub fn disconnect(&mut self, v1: Vec2, v2: Vec2) {
             self.disconnect_inner(v1, v2);
         }
@@ -304,19 +289,16 @@ mod bitboard {
             count as usize
         }
 
-        #[inline]
         fn connect_inner(&mut self, v1: Vec2, v2: Vec2) {
             let (dir, y, x1, x2) = self.get_rot4(v1, v2);
             self.edges[dir][y].set_range(x1, x2);
         }
 
-        #[inline]
         fn disconnect_inner(&mut self, v1: Vec2, v2: Vec2) {
             let (dir, y, x1, x2) = self.get_rot4(v1, v2);
             self.edges[dir][y].unset_range(x1, x2);
         }
 
-        #[inline]
         fn get_rot4(&self, v1: Vec2, v2: Vec2) -> (usize, usize, u32, u32) {
             let dir = (v2 - v1).unit().to_dir() & 3;
             let v1_rot = v1.rot(dir, self.n);
@@ -892,7 +874,6 @@ mod vector {
             (self.x as u32) < n && (self.y as u32) < n
         }
 
-        #[inline]
         pub fn rot(&self, dir: usize, n: usize) -> Self {
             let mut v = *self;
             let n = n as i32;
