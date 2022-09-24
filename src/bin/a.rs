@@ -81,7 +81,7 @@ macro_rules! skip_none {
 }
 
 mod bitboard {
-    use crate::vector::{Vec2, DIR_COUNT, UNITS};
+    use crate::vector::{rot_c, Vec2, DIR_COUNT, UNITS};
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     struct Bitset {
@@ -271,6 +271,35 @@ mod bitboard {
 
             for y in y0..y1 {
                 count += self.points[0][y].get_range_popcnt(x0 as u32, x1 as u32);
+            }
+
+            count as usize
+        }
+
+        pub fn get_range_popcnt_diagonal(
+            &self,
+            x0: usize,
+            y0: usize,
+            dir: usize,
+            width: usize,
+            height: usize,
+        ) -> usize {
+            let mut count = 0;
+            let p = Vec2::new(x0 as i32, y0 as i32);
+            let v = UNITS[rot_c(dir)];
+
+            for i in 0..=height {
+                let p = p + v * i as i32;
+                let p = p.rot(dir, self.n);
+                let y = p.y as usize;
+                let x0 = p.x as u32;
+                let x1 = ((p.x + width as i32 + 1) as u32).min(63);
+
+                if self.points[dir].len() <= y {
+                    break;
+                }
+
+                count += self.points[dir][y].get_range_popcnt(x0 as u32, x1 as u32);
             }
 
             count as usize
@@ -571,12 +600,12 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
         let temp = f64::powf(temp0, 1.0 - time) * f64::powf(temp1, time);
 
         // 変形
-        let init_rectangles = if rng.gen_bool(0.1) {
+        let init_rectangles = if rng.gen_bool(0.5) {
             try_break_rectangles(input, &solution, &mut rng)
         } else {
             try_break_rectangles_diagonal(input, &solution, &mut rng)
         };
-        
+
         let init_rectangles = skip_none!(init_rectangles);
 
         if solution.rectangles.len() != 0 && solution.rectangles.len() == init_rectangles.len() {
@@ -646,9 +675,10 @@ fn try_break_rectangles(
     rng: &mut rand_pcg::Pcg64Mcg,
 ) -> Option<Vec<[Vec2; 4]>> {
     let x0 = rng.gen_range(0, input.n - 1);
-    let x1 = rng.gen_range(x0 + 1, input.n);
     let y0 = rng.gen_range(0, input.n - 1);
-    let y1 = rng.gen_range(y0 + 1, input.n);
+    let size = rng.gen_range(1, input.n - x0.max(y0));
+    let x1 = x0 + size;
+    let y1 = y0 + size;
     let count = solution.board.get_range_popcnt(x0, y0, x1, y1);
 
     if (solution.rectangles.len() != 0 && count == 0) || count >= 50 {
@@ -675,17 +705,25 @@ fn try_break_rectangles_diagonal(
     rng: &mut rand_pcg::Pcg64Mcg,
 ) -> Option<Vec<[Vec2; 4]>> {
     let dir = rng.gen_range(0, 4) * 2 + 1;
-    let x = rng.gen_range(0, input.n) as i32;
-    let y = rng.gen_range(0, input.n) as i32;
-    let width = rng.gen_range(0, input.n / 2) as i32;
+    let x = rng.gen_range(0, input.n);
+    let y = rng.gen_range(0, input.n);
+    let width = rng.gen_range(0, input.n / 2);
     let height = width;
     let unit_u = UNITS[dir];
     let unit_v = UNITS[rot_c(dir)];
 
-    let p0 = Vec2::new(x, y);
-    let p1 = p0 + unit_u * width;
-    let p2 = p1 + unit_v * height;
-    let p3 = p0 + unit_v * height;
+    let p0 = Vec2::new(x as i32, y as i32);
+    let p1 = p0 + unit_u * width as i32;
+    let p2 = p1 + unit_v * height as i32;
+    let p3 = p0 + unit_v * height as i32;
+
+    let count = solution
+        .board
+        .get_range_popcnt_diagonal(x, y, dir, width, height);
+
+    if (solution.rectangles.len() != 0 && count == 0) || count >= 50 {
+        return None;
+    }
 
     fn between(p: Vec2, p0: Vec2, p1: Vec2, p2: Vec2) -> bool {
         let p = p - p0;
@@ -695,19 +733,12 @@ fn try_break_rectangles_diagonal(
     }
 
     let mut init_rectangles = Vec::with_capacity(solution.rectangles.len());
-    let mut removed = 0;
 
     for rect in solution.rectangles.iter() {
         let p = rect[0];
 
         if !between(p, p0, p1, p3) || !between(p, p2, p3, p1) {
             init_rectangles.push(rect.clone());
-        } else {
-            removed += 1;
-
-            if removed >= 50 {
-                return None;
-            }
         }
     }
 
