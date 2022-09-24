@@ -7,7 +7,7 @@ use proconio::*;
 use rand::prelude::*;
 use rand_pcg::Pcg64Mcg;
 use sample::WeightedSampler;
-use vector::DIR_COUNT;
+use vector::{DIR_COUNT, UNITS};
 
 use crate::vector::{rot_c, rot_cc, Vec2};
 
@@ -571,7 +571,11 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
         let temp = f64::powf(temp0, 1.0 - time) * f64::powf(temp1, time);
 
         // 変形
-        let init_rectangles = try_break_square(input, &solution, &mut rng);
+        let init_rectangles = if rng.gen_bool(0.0) {
+            try_break_rectangles(input, &solution, &mut rng)
+        } else {
+            try_break_rectangles_diagonal(input, &solution, &mut rng)
+        };
         let init_rectangles = skip_none!(init_rectangles);
 
         if solution.rectangles.len() != 0 && solution.rectangles.len() == init_rectangles.len() {
@@ -635,7 +639,7 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     best_solution
 }
 
-fn try_break_square(
+fn try_break_rectangles(
     input: &Input,
     solution: &State,
     rng: &mut rand_pcg::Pcg64Mcg,
@@ -662,6 +666,49 @@ fn try_break_square(
     }
 
     Some(init_rectangles)
+}
+
+fn try_break_rectangles_diagonal(
+    input: &Input,
+    solution: &State,
+    rng: &mut rand_pcg::Pcg64Mcg,
+) -> Option<Vec<[Vec2; 4]>> {
+    let dir = rng.gen_range(0, 4) * 2 + 1;
+    let x = rng.gen_range(0, input.n) as i32;
+    let y = rng.gen_range(0, input.n) as i32;
+    let width = rng.gen_range(0, input.n / 2) as i32;
+    let height = width;
+    let unit_u = UNITS[dir];
+    let unit_v = UNITS[rot_c(dir)];
+
+    let p0 = Vec2::new(x, y);
+    let p1 = p0 + unit_u * width;
+    let p2 = p1 + unit_v * height;
+    let p3 = p0 + unit_v * height;
+
+    fn between(p: Vec2, p0: Vec2, p1: Vec2, p2: Vec2) -> bool {
+        let p = p - p0;
+        let p1 = p1 - p0;
+        let p2 = p2 - p0;
+        p1.cross(p) <= 0 && p2.cross(p) >= 0
+    }
+
+    let mut init_rectangles = Vec::with_capacity(solution.rectangles.len());
+    for rect in solution.rectangles.iter() {
+        let p = rect[0];
+
+        if !between(p, p0, p1, p3) || !between(p, p2, p3, p1) {
+            init_rectangles.push(rect.clone());
+        }
+    }
+
+    let removed = solution.rectangles.len() - init_rectangles.len();
+
+    if (solution.rectangles.len() != 0 && init_rectangles.len() == 0) || removed >= 50 {
+        None
+    } else {
+        Some(init_rectangles)
+    }
 }
 
 fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mcg) -> State {
@@ -861,6 +908,10 @@ mod vector {
             }
 
             v
+        }
+
+        pub fn cross(&self, rhs: Vec2) -> i32 {
+            self.x * rhs.y - self.y * rhs.x
         }
 
         pub fn unit(&self) -> Self {
