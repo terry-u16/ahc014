@@ -569,8 +569,7 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     const NOT_IMPROVED_THRESHOLD: usize = 10000;
     let mut not_improved = 0;
 
-    let mut sampler = vec![];
-    let mut sampler_small = vec![];
+    let mut ls_sampler = LargeSmallSampler::new(rng.gen());
 
     loop {
         all_iter += 1;
@@ -596,13 +595,7 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
             continue;
         }
 
-        let state = random_greedy(
-            input,
-            &init_rectangles,
-            &mut sampler,
-            &mut sampler_small,
-            &mut rng,
-        );
+        let state = random_greedy(input, &init_rectangles, &mut ls_sampler);
 
         // スコア計算
         let new_score = state.calc_normalized_score(input);
@@ -742,9 +735,7 @@ fn try_break_rectangles_diagonal(
 fn random_greedy(
     input: &Input,
     init_rectangles: &[[Vec2; 4]],
-    sampler: &mut Vec<[Vec2; 4]>,
-    sampler_small: &mut Vec<[Vec2; 4]>,
-    rng: &mut Pcg64Mcg,
+    sampler: &mut impl Sampler<[Vec2; 4]>,
 ) -> State {
     let mut state = State::init(input);
     state.rectangles.reserve(init_rectangles.len() * 3 / 2);
@@ -767,15 +758,13 @@ fn random_greedy(
             let p3 = skip_none!(next_p[rot_c(dir)]);
             let p0 = p1 + (p3 - p2);
 
-            try_add_candidate(input, &state, p0, p1, p2, p3, sampler_small, sampler)
+            try_add_candidate(input, &state, p0, p1, p2, p3, sampler)
         }
     }
 
     loop {
-        let rectangle = if sampler_small.len() > 0 {
-            sampler_small.swap_remove(rng.gen_range(0, sampler_small.len()))
-        } else if sampler.len() > 0 {
-            sampler.swap_remove(rng.gen_range(0, sampler.len()))
+        let rectangle = if let Some(rect) = sampler.sample() {
+            rect
         } else {
             break;
         };
@@ -787,7 +776,7 @@ fn random_greedy(
         state.apply(input, &rectangle);
 
         for (p0, p1, p2, p3) in NextPointIterator::new(&state, rectangle) {
-            try_add_candidate(input, &state, p0, p1, p2, p3, sampler_small, sampler)
+            try_add_candidate(input, &state, p0, p1, p2, p3, sampler)
         }
     }
 
@@ -801,8 +790,7 @@ fn try_add_candidate(
     p1: Vec2,
     p2: Vec2,
     p3: Vec2,
-    sampler_small: &mut Vec<[Vec2; 4]>,
-    sampler: &mut Vec<[Vec2; 4]>,
+    sampler: &mut impl Sampler<[Vec2; 4]>,
 ) {
     if !p0.in_map(input.n)
         || state.board.is_occupied(p0)
@@ -812,18 +800,8 @@ fn try_add_candidate(
         return;
     }
 
-    let v0 = p1 - p0;
-    let v1 = p3 - p0;
     let rectangle = [p0, p1, p2, p3];
-
-    let norm0 = v0.norm2_sq();
-    let norm1 = v1.norm2_sq();
-
-    if (norm0 == 1 && norm1 == 1) || (norm0 == 2 && norm1 == 2) {
-        sampler_small.push(rectangle);
-    } else {
-        sampler.push(rectangle);
-    }
+    sampler.push(rectangle);
 }
 
 struct NextPointIterator<'a> {
@@ -908,6 +886,64 @@ impl<'a> Iterator for NextPointIterator<'a> {
         }
 
         None
+    }
+}
+
+trait Sampler<T> {
+    fn push(&mut self, item: T);
+    fn sample(&mut self) -> Option<T>;
+}
+
+struct LargeSmallSampler {
+    items_small: Vec<[Vec2; 4]>,
+    items_large: Vec<[Vec2; 4]>,
+    rng: Pcg64Mcg,
+}
+
+impl LargeSmallSampler {
+    fn new(seed: u128) -> Self {
+        let items_small = Vec::with_capacity(32);
+        let items_large = Vec::with_capacity(32);
+        let rng = Pcg64Mcg::new(seed);
+        Self {
+            items_small,
+            items_large,
+            rng,
+        }
+    }
+}
+
+impl Sampler<[Vec2; 4]> for LargeSmallSampler {
+    fn push(&mut self, item: [Vec2; 4]) {
+        let p0 = item[0];
+        let p1 = item[1];
+        let p3 = item[3];
+
+        let v0 = p1 - p0;
+        let v1 = p3 - p0;
+        let norm0 = v0.norm2_sq();
+        let norm1 = v1.norm2_sq();
+
+        if (norm0 == 1 && norm1 == 1) || (norm0 == 2 && norm1 == 2) {
+            self.items_small.push(item);
+        } else {
+            self.items_large.push(item);
+        }
+    }
+
+    fn sample(&mut self) -> Option<[Vec2; 4]> {
+        let len_small = self.items_small.len();
+        let len_large = self.items_large.len();
+
+        if len_small > 0 {
+            let i = self.rng.gen_range(0, len_small);
+            Some(self.items_small.swap_remove(i))
+        } else if len_large > 0 {
+            let i = self.rng.gen_range(0, len_large);
+            Some(self.items_large.swap_remove(i))
+        } else {
+            None
+        }
     }
 }
 
