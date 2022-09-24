@@ -571,27 +571,8 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
         let temp = f64::powf(temp0, 1.0 - time) * f64::powf(temp1, time);
 
         // 変形
-        let x0 = rng.gen_range(0, input.n - 1);
-        let x1 = rng.gen_range(x0 + 1, input.n);
-        let y0 = rng.gen_range(0, input.n - 1);
-        let y1 = rng.gen_range(y0 + 1, input.n);
-        let count = solution.board.get_range_popcnt(x0, y0, x1, y1);
-
-        if (solution.rectangles.len() != 0 && count == 0) || count >= 50 {
-            continue;
-        }
-
-        let mut init_rectangles = Vec::with_capacity(solution.rectangles.len());
-
-        for rect in solution.rectangles.iter() {
-            let p = rect[0];
-            let x = p.x as usize;
-            let y = p.y as usize;
-
-            if !(x0 <= x && x < x1 && y0 <= y && y < y1) {
-                init_rectangles.push(rect.clone());
-            }
-        }
+        let init_rectangles = try_break_square(input, &solution, &mut rng);
+        let init_rectangles = skip_none!(init_rectangles);
 
         if solution.rectangles.len() != 0 && solution.rectangles.len() == init_rectangles.len() {
             continue;
@@ -652,6 +633,35 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     }
 
     best_solution
+}
+
+fn try_break_square(
+    input: &Input,
+    solution: &State,
+    rng: &mut rand_pcg::Pcg64Mcg,
+) -> Option<Vec<[Vec2; 4]>> {
+    let x0 = rng.gen_range(0, input.n - 1);
+    let x1 = rng.gen_range(x0 + 1, input.n);
+    let y0 = rng.gen_range(0, input.n - 1);
+    let y1 = rng.gen_range(y0 + 1, input.n);
+    let count = solution.board.get_range_popcnt(x0, y0, x1, y1);
+
+    if (solution.rectangles.len() != 0 && count == 0) || count >= 50 {
+        return None;
+    }
+
+    let mut init_rectangles = Vec::with_capacity(solution.rectangles.len());
+    for rect in solution.rectangles.iter() {
+        let p = rect[0];
+        let x = p.x as usize;
+        let y = p.y as usize;
+
+        if !(x0 <= x && x < x1 && y0 <= y && y < y1) {
+            init_rectangles.push(rect.clone());
+        }
+    }
+
+    Some(init_rectangles)
 }
 
 fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mcg) -> State {
