@@ -786,37 +786,7 @@ fn random_greedy(
 
         state.apply(input, &rectangle);
 
-        for (dir, next) in next_p.iter_mut().enumerate() {
-            *next = state.board.find_next(rectangle[0], dir);
-        }
-
-        let p1 = rectangle[0];
-
-        for dir in 0..8 {
-            let p2 = skip_none!(next_p[dir]);
-            let p3 = skip_none!(state.board.find_next(p2, rot_c(dir)));
-            let p0 = p1 + (p3 - p2);
-
-            try_add_candidate(input, &state, p0, p1, p2, p3, sampler_small, sampler)
-        }
-
-        let p2 = rectangle[0];
-
-        for dir in 0..8 {
-            let p1 = skip_none!(next_p[dir]);
-            let p3 = skip_none!(next_p[rot_cc(dir)]);
-            let p0 = p1 + (p3 - p2);
-
-            try_add_candidate(input, &state, p0, p1, p2, p3, sampler_small, sampler)
-        }
-
-        let p3 = rectangle[0];
-
-        for dir in 0..8 {
-            let p2 = skip_none!(next_p[dir]);
-            let p1 = skip_none!(state.board.find_next(p2, rot_cc(dir)));
-            let p0 = p1 + (p3 - p2);
-
+        for (p0, p1, p2, p3) in NextPointIterator::new(&state, rectangle) {
             try_add_candidate(input, &state, p0, p1, p2, p3, sampler_small, sampler)
         }
     }
@@ -853,6 +823,91 @@ fn try_add_candidate(
         sampler_small.push(rectangle);
     } else {
         sampler.push(rectangle);
+    }
+}
+
+struct NextPointIterator<'a> {
+    rectangle: [Vec2; 4],
+    next: [Option<Vec2>; DIR_COUNT],
+    dir: usize,
+    phase: usize,
+    state: &'a State,
+}
+
+impl<'a> NextPointIterator<'a> {
+    fn new(state: &'a State, rectangle: [Vec2; 4]) -> Self {
+        let mut next = [None; DIR_COUNT];
+
+        for (dir, next) in next.iter_mut().enumerate() {
+            *next = state.board.find_next(rectangle[0], dir);
+        }
+
+        let dir = 0;
+        let phase = 0;
+
+        Self {
+            rectangle,
+            next,
+            dir,
+            phase,
+            state,
+        }
+    }
+}
+
+impl<'a> Iterator for NextPointIterator<'a> {
+    type Item = (Vec2, Vec2, Vec2, Vec2);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.phase == 0 {
+            let p1 = self.rectangle[0];
+
+            while self.dir < DIR_COUNT {
+                let dir = self.dir;
+                self.dir += 1;
+
+                let p2 = skip_none!(self.next[dir]);
+                let p3 = skip_none!(self.state.board.find_next(p2, rot_c(dir)));
+                let p0 = p1 + (p3 - p2);
+                return Some((p0, p1, p2, p3));
+            }
+
+            self.phase += 1;
+            self.dir = 0;
+        }
+
+        if self.phase == 1 {
+            let p2 = self.rectangle[0];
+
+            while self.dir < DIR_COUNT {
+                let dir = self.dir;
+                self.dir += 1;
+
+                let p1 = skip_none!(self.next[dir]);
+                let p3 = skip_none!(self.next[rot_cc(dir)]);
+                let p0 = p1 + (p3 - p2);
+                return Some((p0, p1, p2, p3));
+            }
+
+            self.phase += 1;
+            self.dir = 0;
+        }
+
+        if self.phase == 2 {
+            let p3 = self.rectangle[0];
+
+            while self.dir < DIR_COUNT {
+                let dir = self.dir;
+                self.dir += 1;
+
+                let p2 = skip_none!(self.next[dir]);
+                let p1 = skip_none!(self.state.board.find_next(p2, rot_cc(dir)));
+                let p0 = p1 + (p3 - p2);
+                return Some((p0, p1, p2, p3));
+            }
+        }
+
+        None
     }
 }
 
