@@ -659,7 +659,7 @@ fn random_greedy(input: &Input, init_rectangles: &[[Vec2; 4]], rng: &mut Pcg64Mc
     state.rectangles.reserve(init_rectangles.len() * 3 / 2);
 
     for rect in init_rectangles {
-        if state.can_apply(rect) {
+        if rect[1..].iter().all(|p| state.board.is_occupied(*p)) {
             state.apply(input, rect);
         }
     }
