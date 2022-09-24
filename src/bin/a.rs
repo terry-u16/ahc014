@@ -602,7 +602,7 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
         let temp = f64::powf(temp0, 1.0 - time) * f64::powf(temp1, time);
 
         // 変形
-        let init_rectangles = if rng.gen_bool(0.5) {
+        let init_rectangles = if rng.gen_bool(0.8) {
             try_break_rectangles(input, &solution, &mut rng)
         } else {
             try_break_rectangles_diagonal(input, &solution, &mut rng)
