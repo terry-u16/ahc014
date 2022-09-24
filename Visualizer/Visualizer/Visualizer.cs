@@ -45,7 +45,7 @@ public class Visualizer
         canvas.Clear(White);
         DrawGrid(canvas);
         DrawRectangles(canvas, solution);
-        DrawScore(canvas, solution);
+        DrawText(canvas, solution);
         DrawGraph(canvas, solutions, index);
 
         return bitmap;
@@ -114,7 +114,7 @@ public class Visualizer
         }
     }
 
-    private void DrawScore(SKCanvas canvas, Solution solution)
+    private void DrawText(SKCanvas canvas, Solution solution)
     {
         using var paint = new SKPaint
         {
@@ -124,7 +124,10 @@ public class Visualizer
             IsAntialias = true
         };
 
-        var point = new SKPoint(1100, CanvasPadding + 200);
+        var point = new SKPoint(1100, CanvasPadding + 150);
+        canvas.DrawText($"Seed : {_input.Seed,7}", point, paint);
+
+        point = point with { Y = point.Y + FontSize };
         canvas.DrawText($"Score: {solution.Score,7}", point, paint);
     }
 
@@ -132,8 +135,8 @@ public class Visualizer
     {
         const int left = 1100;
         const int right = CanvasWidthWithPadding - CanvasPadding;
-        const int top = 250 + CanvasPadding;
-        const int bottom = 850 + CanvasPadding;
+        const int top = 300 + CanvasPadding;
+        const int bottom = 900 + CanvasPadding;
         const float maxScore = 3e6f;
 
         float GetX(float x) => (right - left) * x + left;

@@ -7,13 +7,15 @@ public class Input
     public int N { get; }
     public int M { get; }
     public Vector2[] Points { get; }
+    public int Seed { get; }
     private readonly int _totalWeight;
 
-    public Input(int n, int m, Vector2[] points)
+    public Input(int n, int m, Vector2[] points, int seed)
     {
         N = n;
         M = m;
         Points = points;
+        Seed = seed;
 
         for (int x = 0; x < n; x++)
         {
@@ -24,7 +26,7 @@ public class Input
         }
     }
 
-    public static async Task<Input> ReadFromFileAsync(TextReader reader)
+    public static async Task<Input> ReadFromFileAsync(TextReader reader, int seed)
     {
         var nmString = await reader.ReadLineAsync() ?? throw new InvalidOperationException();
         var nm = nmString.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToArray();
@@ -40,7 +42,7 @@ public class Input
             points[i] = new Vector2(xy[0], xy[1]);
         }
 
-        return new Input(n, m, points);
+        return new Input(n, m, points, seed);
     }
 
     public double CalculatePointScore(Vector2 v) => 

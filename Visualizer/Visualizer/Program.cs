@@ -19,7 +19,8 @@ app.AddRootCommand(async (
             File.Delete(outputPath);
         }
 
-        var input = await ReadInputAsync(inputPath);
+        var seed = ParseSeed(inputPath);
+        var input = await ReadInputAsync(inputPath, seed);
         using var solutionReader = new StreamReader(solutionPath);
         var solutions = new List<Solution>();
 
@@ -49,11 +50,17 @@ app.AddRootCommand(async (
 app.Run();
 
 
-static async Task<Input> ReadInputAsync(string inputPath)
+static async Task<Input> ReadInputAsync(string inputPath, int seed)
 {
     using var reader = new StreamReader(inputPath);
-    var input = await Input.ReadFromFileAsync(reader);
+    var input = await Input.ReadFromFileAsync(reader, seed);
     return input;
+}
+
+static int ParseSeed(string inputPath)
+{
+    var name = Path.GetFileNameWithoutExtension(inputPath);
+    return int.Parse(name);
 }
 
 async Task ConvertToMovie(string s, string imageDirectory, CancellationToken ct = default)
