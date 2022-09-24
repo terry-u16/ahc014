@@ -571,11 +571,12 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
         let temp = f64::powf(temp0, 1.0 - time) * f64::powf(temp1, time);
 
         // 変形
-        let init_rectangles = if rng.gen_bool(0.0) {
+        let init_rectangles = if rng.gen_bool(0.1) {
             try_break_rectangles(input, &solution, &mut rng)
         } else {
             try_break_rectangles_diagonal(input, &solution, &mut rng)
         };
+        
         let init_rectangles = skip_none!(init_rectangles);
 
         if solution.rectangles.len() != 0 && solution.rectangles.len() == init_rectangles.len() {
@@ -694,17 +695,23 @@ fn try_break_rectangles_diagonal(
     }
 
     let mut init_rectangles = Vec::with_capacity(solution.rectangles.len());
+    let mut removed = 0;
+
     for rect in solution.rectangles.iter() {
         let p = rect[0];
 
         if !between(p, p0, p1, p3) || !between(p, p2, p3, p1) {
             init_rectangles.push(rect.clone());
+        } else {
+            removed += 1;
+
+            if removed >= 50 {
+                return None;
+            }
         }
     }
 
-    let removed = solution.rectangles.len() - init_rectangles.len();
-
-    if (solution.rectangles.len() != 0 && init_rectangles.len() == 0) || removed >= 50 {
+    if solution.rectangles.len() != 0 && init_rectangles.len() == 0 {
         None
     } else {
         Some(init_rectangles)
