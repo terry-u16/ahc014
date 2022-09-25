@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{collections::BinaryHeap, time::Instant};
 
 use bitboard::Board;
 #[allow(unused_imports)]
@@ -559,6 +559,8 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     let mut not_improved = 0;
 
     let mut ls_sampler = LargeSmallSampler::new(rng.gen());
+    let mut out_sampler = OutsideFirstSampler::new(&input, rng.gen());
+    let use_out_sampler = (input.m as f64 / (input.n * input.n) as f64).sqrt() < 0.2;
 
     loop {
         all_iter += 1;
@@ -584,7 +586,11 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
             continue;
         }
 
-        let state = random_greedy(input, &init_rectangles, &mut ls_sampler);
+        let state = if !use_out_sampler || rng.gen_bool(0.7) {
+            random_greedy(input, &init_rectangles, &mut ls_sampler)
+        } else {
+            random_greedy(input, &init_rectangles, &mut out_sampler)
+        };
 
         // スコア計算
         let new_score = state.calc_normalized_score(input);
@@ -724,7 +730,7 @@ fn try_break_rectangles_diagonal(
 fn random_greedy(
     input: &Input,
     init_rectangles: &[[Vec2; 4]],
-    sampler: &mut impl Sampler<[Vec2; 4]>,
+    sampler: &mut dyn Sampler<[Vec2; 4]>,
 ) -> State {
     let mut state = State::init(input);
     state.rectangles.reserve(init_rectangles.len() * 3 / 2);
@@ -779,7 +785,7 @@ fn try_add_candidate(
     p1: Vec2,
     p2: Vec2,
     p3: Vec2,
-    sampler: &mut impl Sampler<[Vec2; 4]>,
+    sampler: &mut dyn Sampler<[Vec2; 4]>,
 ) {
     if !p0.in_map(input.n)
         || state.board.is_occupied(p0)
@@ -933,6 +939,64 @@ impl Sampler<[Vec2; 4]> for LargeSmallSampler {
         } else {
             None
         }
+    }
+}
+
+struct ScoredRect {
+    rectangle: [Vec2; 4],
+    score: i32,
+}
+
+impl ScoredRect {
+    fn new(rectangle: [Vec2; 4], score: i32) -> Self {
+        Self { rectangle, score }
+    }
+}
+
+impl PartialEq for ScoredRect {
+    fn eq(&self, other: &Self) -> bool {
+        self.score == other.score
+    }
+}
+
+impl Eq for ScoredRect {}
+
+impl PartialOrd for ScoredRect {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.score.partial_cmp(&other.score)
+    }
+}
+
+impl Ord for ScoredRect {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.score.cmp(&other.score)
+    }
+}
+
+struct OutsideFirstSampler<'a> {
+    queue: BinaryHeap<ScoredRect>,
+    input: &'a Input,
+    rng: Pcg64Mcg,
+}
+
+impl<'a> OutsideFirstSampler<'a> {
+    fn new(input: &'a Input, seed: u128) -> Self {
+        let queue = BinaryHeap::new();
+        let rng = Pcg64Mcg::new(seed);
+        Self { queue, input, rng }
+    }
+}
+
+impl<'a> Sampler<[Vec2; 4]> for OutsideFirstSampler<'a> {
+    fn push(&mut self, item: [Vec2; 4]) {
+        let weight = self.input.get_weight(item[0]);
+        let score = weight * self.rng.gen_range(1000, 2000);
+        let rect = ScoredRect::new(item, score);
+        self.queue.push(rect);
+    }
+
+    fn sample(&mut self) -> Option<[Vec2; 4]> {
+        self.queue.pop().map(|r| r.rectangle)
     }
 }
 
