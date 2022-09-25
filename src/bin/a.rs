@@ -1143,32 +1143,33 @@ mod vector {
         }
 
         pub fn rot(&self, dir: usize, n: usize) -> Self {
-            let mut v = *self;
+            let mut x = self.x;
+            let mut y = self.y;
             let n = n as i32;
 
             // 180°回転
             if ((dir >> 2) & 1) > 0 {
-                v.x = n - 1 - v.x;
-                v.y = n - 1 - v.y;
+                x = n - 1 - x;
+                y = n - 1 - y;
             }
 
             // 90°回転
             if ((dir >> 1) & 1) > 0 {
-                let x = v.y;
-                let y = n - 1 - v.x;
-                v.x = x;
-                v.y = y;
+                let xx = y;
+                let yy = n - 1 - x;
+                x = xx;
+                y = yy;
             }
 
             // 45°回転
             if (dir & 1) > 0 {
-                let x = (v.x + v.y) >> 1;
-                let y = n - 1 - v.x + v.y;
-                v.x = x;
-                v.y = y;
+                let xx = (x + y) >> 1;
+                let yy = n - 1 - x + y;
+                x = xx;
+                y = yy;
             }
 
-            v
+            Vec2::new(x, y)
         }
 
         pub fn cross(&self, rhs: Vec2) -> i32 {
