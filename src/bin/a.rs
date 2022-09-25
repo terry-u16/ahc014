@@ -274,6 +274,10 @@ mod bitboard {
             edges[y1].set_range(x0, x1);
         }
 
+        pub fn iter_points(&self) -> impl Iterator<Item = Vec2> {
+            BoardPointIterator::new(self.n, self.points[0].clone())
+        }
+
         fn get_rot4(&self, v1: Vec2, v2: Vec2) -> (usize, usize, u32, u32) {
             let dir = (v2 - v1).unit().to_dir() & 3;
             let v1_rot = v1.rot(dir, self.n);
@@ -287,6 +291,46 @@ mod bitboard {
             let (x1, x2) = if x1 <= x2 { (x1, x2) } else { (x2, x1) };
 
             (dir, y, x1, x2)
+        }
+    }
+
+    pub struct BoardPointIterator {
+        x: u32,
+        y: usize,
+        n: usize,
+        points: Vec<Bitset>,
+    }
+
+    impl BoardPointIterator {
+        fn new(n: usize, points: Vec<Bitset>) -> Self {
+            Self {
+                x: 0,
+                y: 0,
+                n,
+                points,
+            }
+        }
+    }
+
+    impl Iterator for BoardPointIterator {
+        type Item = Vec2;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            while self.y < self.n {
+                let v = self.points[self.y].v >> self.x;
+
+                if v > 0 {
+                    let d = v.trailing_zeros();
+                    let x = self.x + d;
+                    self.x += d + 1;
+                    return Some(Vec2::new(x as i32, self.y as i32));
+                }
+
+                self.x = 0;
+                self.y += 1;
+            }
+
+            None
         }
     }
 
@@ -397,7 +441,6 @@ impl Input {
 
 #[derive(Debug, Clone)]
 struct State {
-    points: Vec<Vec2>,
     board: Board,
     rectangles: Vec<[Vec2; 4]>,
     score: i32,
@@ -405,14 +448,12 @@ struct State {
 
 impl State {
     fn init(input: &Input) -> Self {
-        let points = input.p.clone();
         let board = Board::init(input.n, &input.p);
         let rectangles = vec![];
 
-        let score = points.iter().map(|p| input.get_weight(*p)).sum();
+        let score = input.p.iter().map(|p| input.get_weight(*p)).sum();
 
         Self {
-            points,
             board,
             rectangles,
             score,
@@ -437,7 +478,6 @@ impl State {
     }
 
     fn apply(&mut self, input: &Input, rectangle: &[Vec2; 4]) {
-        self.points.push(rectangle[0]);
         self.board.add_point(rectangle[0]);
         self.rectangles.push(rectangle.clone());
         self.score += input.get_weight(rectangle[0]);
@@ -743,7 +783,7 @@ fn random_greedy(
 
     let mut next_p = [None; DIR_COUNT];
 
-    for &p2 in state.points.iter() {
+    for p2 in state.board.iter_points() {
         for (dir, next) in next_p.iter_mut().enumerate() {
             *next = state.board.find_next(p2, dir);
         }
