@@ -512,9 +512,23 @@ impl std::fmt::Display for Output {
     }
 }
 
+struct Parameter {
+    duration: f64,
+}
+
+impl Parameter {
+    fn new() -> Self {
+        let duration_mul =
+            std::env::var("DURATION_MUL").map_or_else(|_| 1.0, |val| val.parse::<f64>().unwrap());
+        let duration = 4.98 * duration_mul;
+        Self { duration }
+    }
+}
+
 fn main() {
+    let parameter = Parameter::new();
     let input = Input::read();
-    let output = annealing(&input, State::init(&input), 4.98).to_output();
+    let output = annealing(&input, State::init(&input), parameter.duration).to_output();
     eprintln!("Elapsed: {}ms", (Instant::now() - input.since).as_millis());
     println!("{}", output);
 }
