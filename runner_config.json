@@ -7,7 +7,7 @@
     "StartSeed": 0,
     "EndSeed": 200,
     "ReferenceScore": 1000000,
-    "LocalParallelCount": 32,
+    "LocalParallelCount": 16,
     "CloudParallelCount": 300,
     "SummaryFilePath": ".\\data\\score_history.txt"
   },
@@ -18,7 +18,13 @@
     "LocalExecutionSteps": [
       {
         "ExecutionCommand": "ahc014-a.exe",
-        "StdInPath": "in/{SEED}.txt",
+        "StdInPath": "data/in/{SEED}.txt",
+        "StdOutPath": "data/out/{SEED}.txt",
+        "StdErrorPath": null
+      },
+      {
+        "ExecutionCommand": "vis.exe data/in/{SEED}.txt data/out/{SEED}.txt",
+        "StdInPath": null,
         "StdOutPath": null,
         "StdErrorPath": null
       }
