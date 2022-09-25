@@ -102,11 +102,6 @@ mod bitboard {
             self.v ^= 1 << i;
         }
 
-        fn unset(&mut self, i: u32) {
-            debug_assert!(((self.v >> i) & 1) > 0);
-            self.v ^= 1 << i;
-        }
-
         fn find_next(&self, begin: u32) -> Option<u32> {
             let v = self.v >> begin;
             if v == 0 {
@@ -125,12 +120,6 @@ mod bitboard {
         fn set_range(&mut self, begin: u32, end: u32) {
             debug_assert!(!self.contains_range(begin, end));
             self.v ^= Self::get_range_mask(begin, end);
-        }
-
-        fn unset_range(&mut self, begin: u32, end: u32) {
-            let mask = Self::get_range_mask(begin, end);
-            debug_assert!((self.v & mask) == mask);
-            self.v ^= mask;
         }
 
         fn get_range_popcnt(&self, begin: u32, end: u32) -> u32 {
@@ -228,26 +217,25 @@ mod bitboard {
             !has_point && !has_edge
         }
 
+        pub fn can_connect_parallel(&self, v0: Vec2, width: i32, height: i32, dir: usize) -> bool {
+            let v0 = v0.rot(dir, self.n);
+            let y0 = v0.y as usize;
+            let x0 = v0.x as u32;
+            let y1 = (y0 as i32 + height) as usize;
+            let x1 = x0 + width as u32;
+            let points = &self.points[dir];
+            let edges = &self.edges[dir];
+            !points[y0].contains_range(x0 + 1, x1)
+                && !points[y1].contains_range(x0 + 1, x1)
+                && !edges[y0].contains_range(x0, x1)
+                && !edges[y1].contains_range(x0, x1)
+        }
+
         pub fn add_point(&mut self, v: Vec2) {
             for dir in 0..DIR_COUNT {
                 let v = v.rot(dir, self.n);
                 self.points[dir][v.y as usize].set(v.x as u32);
             }
-        }
-
-        pub fn remove_point(&mut self, v: Vec2) {
-            for dir in 0..DIR_COUNT {
-                let v = v.rot(dir, self.n);
-                self.points[dir][v.y as usize].unset(v.x as u32);
-            }
-        }
-
-        pub fn connect(&mut self, v1: Vec2, v2: Vec2) {
-            self.connect_inner(v1, v2);
-        }
-
-        pub fn disconnect(&mut self, v1: Vec2, v2: Vec2) {
-            self.disconnect_inner(v1, v2);
         }
 
         pub fn get_range_popcnt(&self, x0: usize, y0: usize, x1: usize, y1: usize) -> usize {
@@ -289,14 +277,15 @@ mod bitboard {
             count as usize
         }
 
-        fn connect_inner(&mut self, v1: Vec2, v2: Vec2) {
-            let (dir, y, x1, x2) = self.get_rot4(v1, v2);
-            self.edges[dir][y].set_range(x1, x2);
-        }
-
-        fn disconnect_inner(&mut self, v1: Vec2, v2: Vec2) {
-            let (dir, y, x1, x2) = self.get_rot4(v1, v2);
-            self.edges[dir][y].unset_range(x1, x2);
+        pub fn connect_parallel(&mut self, v0: Vec2, width: i32, height: i32, dir: usize) {
+            let v0 = v0.rot(dir, self.n);
+            let y0 = v0.y as usize;
+            let x0 = v0.x as u32;
+            let y1 = (y0 as i32 + height) as usize;
+            let x1 = x0 + width as u32;
+            let edges = &mut self.edges[dir];
+            edges[y0].set_range(x0, x1);
+            edges[y1].set_range(x0, x1);
         }
 
         fn get_rot4(&self, v1: Vec2, v2: Vec2) -> (usize, usize, u32, u32) {
@@ -324,13 +313,6 @@ mod bitboard {
             let mut b = Bitset::new(1);
             b.set(1);
             assert_eq!(b.v, 3);
-        }
-
-        #[test]
-        fn unset() {
-            let mut b = Bitset::new(3);
-            b.unset(1);
-            assert_eq!(b.v, 1);
         }
 
         #[test]
@@ -363,13 +345,6 @@ mod bitboard {
             let mut b = Bitset::new(1);
             b.set_range(2, 4);
             assert_eq!(b.v, 13);
-        }
-
-        #[test]
-        fn unset_range() {
-            let mut b = Bitset::new(13);
-            b.unset_range(2, 4);
-            assert_eq!(b.v, 1);
         }
     }
 }
@@ -442,7 +417,6 @@ struct State {
     score: i32,
 }
 
-#[allow(dead_code)]
 impl State {
     fn init(input: &Input) -> Self {
         let points = input.p.clone();
@@ -466,11 +440,44 @@ impl State {
             }
         }
 
-        for (i, &from) in rectangle.iter().enumerate() {
-            let to = rectangle[(i + 1) % 4];
-            if !self.board.can_connect(from, to) {
-                return false;
+        let mut begin = 0;
+        let mut edges = [Vec2::default(); 4];
+
+        for (i, edge) in edges.iter_mut().enumerate() {
+            *edge = rectangle[(i + 1) & 3] - rectangle[i];
+        }
+
+        for i in 0..4 {
+            let p = &edges[i];
+            if p.x > 0 && p.y >= 0 {
+                begin = i;
+                break;
             }
+        }
+
+        let p0 = rectangle[begin];
+        let p1 = rectangle[(begin + 1) & 3];
+        let p3 = rectangle[(begin + 3) & 3];
+
+        let width = p1.x - p0.x;
+        let height = p3.y - p0.y;
+        let (dir, height_mul) = if p1.y - p0.y == 0 { (0, 1) } else { (1, 2) };
+
+        if !self
+            .board
+            .can_connect_parallel(p0, width, height * height_mul, dir)
+        {
+            return false;
+        }
+
+        let (width, height) = (height, width);
+        let dir = rot_cc(dir);
+
+        if !self
+            .board
+            .can_connect_parallel(p1, width, height * height_mul, dir)
+        {
+            return false;
         }
 
         true
@@ -482,22 +489,37 @@ impl State {
         self.rectangles.push(rectangle.clone());
         self.score += input.get_weight(rectangle[0]);
 
-        for (i, &from) in rectangle.iter().enumerate() {
-            let to = rectangle[(i + 1) % 4];
-            self.board.connect(from, to);
-        }
-    }
+        let mut begin = 0;
+        let mut edges = [Vec2::default(); 4];
 
-    fn revert(&mut self, input: &Input) {
-        let rectangle = self.rectangles.pop().unwrap();
-        self.points.pop();
-        self.board.remove_point(rectangle[0]);
-        self.score -= input.get_weight(rectangle[0]);
-
-        for (i, &from) in rectangle.iter().enumerate() {
-            let to = rectangle[(i + 1) % 4];
-            self.board.disconnect(from, to);
+        for (i, edge) in edges.iter_mut().enumerate() {
+            *edge = rectangle[(i + 1) & 3] - rectangle[i];
         }
+
+        for i in 0..4 {
+            let p = &edges[i];
+            if p.x > 0 && p.y >= 0 {
+                begin = i;
+                break;
+            }
+        }
+
+        let p0 = rectangle[begin];
+        let p1 = rectangle[(begin + 1) & 3];
+        let p3 = rectangle[(begin + 3) & 3];
+
+        let width = p1.x - p0.x;
+        let height = p3.y - p0.y;
+        let dir = if p1.y - p0.y == 0 { 0 } else { 1 };
+        let height_mul = if dir == 0 { 1 } else { 2 };
+
+        self.board
+            .connect_parallel(p0, width, height * height_mul, dir);
+
+        let (width, height) = (height, width);
+        let dir = rot_cc(dir);
+        self.board
+            .connect_parallel(p1, width, height * height_mul, dir);
     }
 
     fn calc_normalized_score(&self, input: &Input) -> i32 {
@@ -845,7 +867,7 @@ impl<'a> Iterator for NextPointIterator<'a> {
                 self.dir += 1;
 
                 let p2 = skip_none!(self.next[dir]);
-                let p3 = skip_none!(self.state.board.find_next(p2, rot_c(dir)));
+                let p3 = skip_none!(self.state.board.find_next(p2, rot_cc(dir)));
                 let p0 = p1 + (p3 - p2);
                 return Some((p0, p1, p2, p3));
             }
@@ -862,7 +884,7 @@ impl<'a> Iterator for NextPointIterator<'a> {
                 self.dir += 1;
 
                 let p1 = skip_none!(self.next[dir]);
-                let p3 = skip_none!(self.next[rot_cc(dir)]);
+                let p3 = skip_none!(self.next[rot_c(dir)]);
                 let p0 = p1 + (p3 - p2);
                 return Some((p0, p1, p2, p3));
             }
@@ -879,7 +901,7 @@ impl<'a> Iterator for NextPointIterator<'a> {
                 self.dir += 1;
 
                 let p2 = skip_none!(self.next[dir]);
-                let p1 = skip_none!(self.state.board.find_next(p2, rot_cc(dir)));
+                let p1 = skip_none!(self.state.board.find_next(p2, rot_c(dir)));
                 let p0 = p1 + (p3 - p2);
                 return Some((p0, p1, p2, p3));
             }
@@ -949,7 +971,7 @@ impl Sampler<[Vec2; 4]> for LargeSmallSampler {
 
 #[allow(dead_code)]
 mod vector {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
     pub struct Vec2 {
         pub x: i32,
         pub y: i32,
@@ -1129,6 +1151,10 @@ mod vector {
             let v = Vec2::new(2, 1);
             let v = v.rot(1, 4);
             assert_eq!(v, Vec2::new(1, 2));
+
+            let v = Vec2::new(2, 0);
+            let v = v.rot(1, 4);
+            assert_eq!(v, Vec2::new(1, 1));
         }
     }
 }
