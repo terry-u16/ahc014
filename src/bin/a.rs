@@ -217,20 +217,6 @@ mod bitboard {
             !has_point && !has_edge
         }
 
-        pub fn can_connect_parallel(&self, v0: Vec2, width: i32, height: i32, dir: usize) -> bool {
-            let v0 = v0.rot(dir, self.n);
-            let y0 = v0.y as usize;
-            let x0 = v0.x as u32;
-            let y1 = (y0 as i32 + height) as usize;
-            let x1 = x0 + width as u32;
-            let points = &self.points[dir];
-            let edges = &self.edges[dir];
-            !points[y0].contains_range(x0 + 1, x1)
-                && !points[y1].contains_range(x0 + 1, x1)
-                && !edges[y0].contains_range(x0, x1)
-                && !edges[y1].contains_range(x0, x1)
-        }
-
         pub fn add_point(&mut self, v: Vec2) {
             for dir in 0..DIR_COUNT {
                 let v = v.rot(dir, self.n);
@@ -440,44 +426,11 @@ impl State {
             }
         }
 
-        let mut begin = 0;
-        let mut edges = [Vec2::default(); 4];
-
-        for (i, edge) in edges.iter_mut().enumerate() {
-            *edge = rectangle[(i + 1) & 3] - rectangle[i];
-        }
-
-        for i in 0..4 {
-            let p = &edges[i];
-            if p.x > 0 && p.y >= 0 {
-                begin = i;
-                break;
+        for (i, &from) in rectangle.iter().enumerate() {
+            let to = rectangle[(i + 1) % 4];
+            if !self.board.can_connect(from, to) {
+                return false;
             }
-        }
-
-        let p0 = rectangle[begin];
-        let p1 = rectangle[(begin + 1) & 3];
-        let p3 = rectangle[(begin + 3) & 3];
-
-        let width = p1.x - p0.x;
-        let height = p3.y - p0.y;
-        let (dir, height_mul) = if p1.y - p0.y == 0 { (0, 1) } else { (1, 2) };
-
-        if !self
-            .board
-            .can_connect_parallel(p0, width, height * height_mul, dir)
-        {
-            return false;
-        }
-
-        let (width, height) = (height, width);
-        let dir = rot_cc(dir);
-
-        if !self
-            .board
-            .can_connect_parallel(p1, width, height * height_mul, dir)
-        {
-            return false;
         }
 
         true
