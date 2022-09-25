@@ -5,7 +5,7 @@
   },
   "RunnerOption": {
     "StartSeed": 0,
-    "EndSeed": 200,
+    "EndSeed": 1024,
     "ReferenceScore": 1000000,
     "LocalParallelCount": 16,
     "CloudParallelCount": 300,
