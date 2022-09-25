@@ -632,9 +632,9 @@ fn try_break_rectangles(
     solution: &State,
     rng: &mut rand_pcg::Pcg64Mcg,
 ) -> Option<Vec<[Vec2; 4]>> {
-    let x0 = rng.gen_range(0, input.n - 1);
-    let y0 = rng.gen_range(0, input.n - 1);
-    let size = rng.gen_range(1, input.n - x0.max(y0));
+    let size = rng.gen_range(1, input.n / 2);
+    let x0 = rng.gen_range(0, input.n - size + 1);
+    let y0 = rng.gen_range(0, input.n - size + 1);
     let x1 = x0 + size;
     let y1 = y0 + size;
     let count = solution.board.get_range_popcnt(x0, y0, x1, y1);
