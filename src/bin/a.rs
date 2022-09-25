@@ -1,4 +1,4 @@
-use std::{collections::BinaryHeap, time::Instant};
+use std::{collections::BinaryHeap, mem::swap, time::Instant};
 
 use bitboard::Board;
 #[allow(unused_imports)]
@@ -102,6 +102,11 @@ mod bitboard {
             self.v ^= 1 << i;
         }
 
+        fn unset(&mut self, i: u32) {
+            debug_assert!(((self.v >> i) & 1) > 0);
+            self.v ^= 1 << i;
+        }
+
         fn find_next(&self, begin: u32) -> Option<u32> {
             let v = self.v >> begin;
             if v == 0 {
@@ -120,6 +125,12 @@ mod bitboard {
         fn set_range(&mut self, begin: u32, end: u32) {
             debug_assert!(!self.contains_range(begin, end));
             self.v ^= Self::get_range_mask(begin, end);
+        }
+
+        fn unset_range(&mut self, begin: u32, end: u32) {
+            let mask = Self::get_range_mask(begin, end);
+            debug_assert!((self.v & mask) == mask);
+            self.v ^= mask;
         }
 
         fn get_range_popcnt(&self, begin: u32, end: u32) -> u32 {
@@ -224,6 +235,13 @@ mod bitboard {
             }
         }
 
+        pub fn remove_point(&mut self, v: Vec2) {
+            for dir in 0..DIR_COUNT {
+                let v = v.rot(dir, self.n);
+                self.points[dir][v.y as usize].unset(v.x as u32);
+            }
+        }
+
         pub fn get_range_popcnt(&self, x0: usize, y0: usize, x1: usize, y1: usize) -> usize {
             let mut count = 0;
 
@@ -272,6 +290,17 @@ mod bitboard {
             let edges = &mut self.edges[dir];
             edges[y0].set_range(x0, x1);
             edges[y1].set_range(x0, x1);
+        }
+
+        pub fn disconnect_parallel(&mut self, v0: Vec2, width: i32, height: i32, dir: usize) {
+            let v0 = v0.rot(dir, self.n);
+            let y0 = v0.y as usize;
+            let x0 = v0.x as u32;
+            let y1 = (y0 as i32 + height) as usize;
+            let x1 = x0 + width as u32;
+            let edges = &mut self.edges[dir];
+            edges[y0].unset_range(x0, x1);
+            edges[y1].unset_range(x0, x1);
         }
 
         pub fn iter_points(&self) -> impl Iterator<Item = Vec2> {
@@ -346,6 +375,13 @@ mod bitboard {
         }
 
         #[test]
+        fn unset() {
+            let mut b = Bitset::new(3);
+            b.unset(1);
+            assert_eq!(b.v, 1);
+        }
+
+        #[test]
         fn find_next() {
             find_next_inner(1, 1, None);
             find_next_inner(1, 0, Some(0));
@@ -375,6 +411,13 @@ mod bitboard {
             let mut b = Bitset::new(1);
             b.set_range(2, 4);
             assert_eq!(b.v, 13);
+        }
+
+        #[test]
+        fn unset_range() {
+            let mut b = Bitset::new(13);
+            b.unset_range(2, 4);
+            assert_eq!(b.v, 1);
         }
     }
 }
@@ -515,6 +558,46 @@ impl State {
             .connect_parallel(p1, width, height * height_mul, dir);
     }
 
+    fn remove(&mut self, input: &Input, rectangle: &[Vec2; 4]) {
+        self.board.remove_point(rectangle[0]);
+
+        // rectanglesのupdateはしないことに注意！
+        // self.rectangles.push(rectangle.clone());
+        self.score -= input.get_weight(rectangle[0]);
+
+        let mut begin = 0;
+        let mut edges = [Vec2::default(); 4];
+
+        for (i, edge) in edges.iter_mut().enumerate() {
+            *edge = rectangle[(i + 1) & 3] - rectangle[i];
+        }
+
+        for i in 0..4 {
+            let p = &edges[i];
+            if p.x > 0 && p.y >= 0 {
+                begin = i;
+                break;
+            }
+        }
+
+        let p0 = rectangle[begin];
+        let p1 = rectangle[(begin + 1) & 3];
+        let p3 = rectangle[(begin + 3) & 3];
+
+        let width = p1.x - p0.x;
+        let height = p3.y - p0.y;
+        let dir = if p1.y - p0.y == 0 { 0 } else { 1 };
+        let height_mul = if dir == 0 { 1 } else { 2 };
+
+        self.board
+            .disconnect_parallel(p0, width, height * height_mul, dir);
+
+        let (width, height) = (height, width);
+        let dir = rot_cc(dir);
+        self.board
+            .disconnect_parallel(p1, width, height * height_mul, dir);
+    }
+
     fn calc_normalized_score(&self, input: &Input) -> i32 {
         (self.score as f64 * input.score_coef).round() as i32
     }
@@ -614,22 +697,22 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
         let temp = f64::powf(temp0, 1.0 - time) * f64::powf(temp1, time);
 
         // 変形
-        let init_rectangles = if rng.gen_bool(0.8) {
+        let will_removed = if rng.gen_bool(0.8) {
             try_break_rectangles(input, &solution, &mut rng)
         } else {
             try_break_rectangles_diagonal(input, &solution, &mut rng)
         };
 
-        let init_rectangles = skip_none!(init_rectangles);
+        let will_removed = skip_none!(will_removed);
 
-        if solution.rectangles.len() != 0 && solution.rectangles.len() == init_rectangles.len() {
+        if solution.rectangles.len() != 0 && will_removed.iter().all(|b| !b) {
             continue;
         }
 
         let state = if !use_out_sampler || rng.gen_bool(0.7) {
-            random_greedy(input, &init_rectangles, &mut ls_sampler)
+            random_greedy(input, &will_removed, &solution, &mut ls_sampler)
         } else {
-            random_greedy(input, &init_rectangles, &mut out_sampler)
+            random_greedy(input, &will_removed, &solution, &mut out_sampler)
         };
 
         // スコア計算
@@ -691,7 +774,7 @@ fn try_break_rectangles(
     input: &Input,
     solution: &State,
     rng: &mut rand_pcg::Pcg64Mcg,
-) -> Option<Vec<[Vec2; 4]>> {
+) -> Option<Vec<bool>> {
     let size = rng.gen_range(1, input.n / 2);
     let x0 = rng.gen_range(0, input.n - size + 1);
     let y0 = rng.gen_range(0, input.n - size + 1);
@@ -703,25 +786,25 @@ fn try_break_rectangles(
         return None;
     }
 
-    let mut init_rectangles = Vec::with_capacity(solution.rectangles.len());
-    for rect in solution.rectangles.iter() {
-        let p = rect[0];
-        let x = p.x as usize;
-        let y = p.y as usize;
+    let will_removed = solution
+        .rectangles
+        .iter()
+        .map(|rect| {
+            let p = rect[0];
+            let x = p.x as usize;
+            let y = p.y as usize;
+            x0 <= x && x < x1 && y0 <= y && y < y1
+        })
+        .collect();
 
-        if !(x0 <= x && x < x1 && y0 <= y && y < y1) {
-            init_rectangles.push(rect.clone());
-        }
-    }
-
-    Some(init_rectangles)
+    Some(will_removed)
 }
 
 fn try_break_rectangles_diagonal(
     input: &Input,
     solution: &State,
     rng: &mut rand_pcg::Pcg64Mcg,
-) -> Option<Vec<[Vec2; 4]>> {
+) -> Option<Vec<bool>> {
     let dir = rng.gen_range(0, 4) * 2 + 1;
     let x = rng.gen_range(0, input.n);
     let y = rng.gen_range(0, input.n);
@@ -750,34 +833,35 @@ fn try_break_rectangles_diagonal(
         p1.cross(p) <= 0 && p2.cross(p) >= 0
     }
 
-    let mut init_rectangles = Vec::with_capacity(solution.rectangles.len());
+    let will_removed = solution
+        .rectangles
+        .iter()
+        .map(|rect| {
+            let p = rect[0];
+            between(p, p0, p1, p3) && between(p, p2, p3, p1)
+        })
+        .collect();
 
-    for rect in solution.rectangles.iter() {
-        let p = rect[0];
-
-        if !between(p, p0, p1, p3) || !between(p, p2, p3, p1) {
-            init_rectangles.push(rect.clone());
-        }
-    }
-
-    if solution.rectangles.len() != 0 && init_rectangles.len() == 0 {
-        None
-    } else {
-        Some(init_rectangles)
-    }
+    Some(will_removed)
 }
 
 fn random_greedy(
     input: &Input,
-    init_rectangles: &[[Vec2; 4]],
+    will_removed: &[bool],
+    state: &State,
     sampler: &mut dyn Sampler<[Vec2; 4]>,
 ) -> State {
-    let mut state = State::init(input);
-    state.rectangles.reserve(init_rectangles.len() * 3 / 2);
+    // 削除予定の矩形・それに依存する矩形を削除
+    let mut state = state.clone();
+    let mut old_rectangles = Vec::with_capacity(state.rectangles.len() * 6 / 5);
+    swap(&mut state.rectangles, &mut old_rectangles);
 
-    for rect in init_rectangles {
-        if rect[1..].iter().all(|p| state.board.is_occupied(*p)) {
-            state.apply(input, rect);
+    for (&remove, rectangle) in will_removed.iter().zip(old_rectangles.iter()) {
+        let remove = remove || rectangle[1..].iter().any(|v| !state.board.is_occupied(*v));
+        if remove {
+            state.remove(input, rectangle);
+        } else {
+            state.rectangles.push(*rectangle);
         }
     }
 
