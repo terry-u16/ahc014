@@ -4,6 +4,7 @@ data/
 *.txt
 *.csv
 *.mp4
+*.png
 vis.html
 
 Visualizer/.vs
