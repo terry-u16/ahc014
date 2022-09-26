@@ -217,104 +217,6 @@ mod bitboard {
             }
         }
 
-        pub fn find_next8(&self, v: Vec2, next: &mut [Option<Vec2>; 8]) {
-            // この関数、やばいです
-            fn find_next_inner(points: &[Vec<Bitset>], dir: usize, v: Vec2) -> Option<u32> {
-                let x = v.x as u32;
-                let y = v.y as usize;
-                points[dir][y].find_next(x + 1).map(|d| d - x)
-            }
-
-            fn check_edge_1(
-                edges: &[Vec<Bitset>],
-                v_raw: Vec2,
-                v_rot: Vec2,
-                dist: &Option<u32>,
-                dir: usize,
-            ) -> Option<Vec2> {
-                match dist {
-                    Some(d) => {
-                        let y = v_rot.y as usize;
-                        let x1 = v_rot.x as u32;
-                        let x2 = x1 + d;
-                        let has_edge = edges[dir][y].contains_range(x1, x2);
-
-                        if has_edge {
-                            None
-                        } else {
-                            Some(v_raw + UNITS[dir] * *d as i32)
-                        }
-                    }
-                    None => None,
-                }
-            }
-
-            fn check_edge_2(
-                edges: &[Vec<Bitset>],
-                v_raw: Vec2,
-                v_rot: Vec2,
-                dist: &Option<u32>,
-                dir: usize,
-            ) -> Option<Vec2> {
-                match dist {
-                    Some(d) => {
-                        let y = v_rot.y as usize;
-                        let x1 = v_rot.x as u32;
-                        let x2 = x1 - d;
-                        let has_edge = edges[dir & 3][y].contains_range(x2, x1);
-
-                        if has_edge {
-                            None
-                        } else {
-                            Some(v_raw + UNITS[dir] * *d as i32)
-                        }
-                    }
-                    None => None,
-                }
-            }
-
-            let mut dists = [None; 8];
-            let mut vecs = [Vec2::default(); 8];
-
-            // 手動ループアンローリング
-            // 助けてくれ
-            unsafe {
-                *vecs.get_unchecked_mut(0) = v;
-                *vecs.get_unchecked_mut(1) = vecs.get_unchecked(0).rot45(self.n);
-                *vecs.get_unchecked_mut(2) = vecs.get_unchecked(0).rot90(self.n);
-                *vecs.get_unchecked_mut(3) = vecs.get_unchecked(2).rot45(self.n);
-                *vecs.get_unchecked_mut(4) = vecs.get_unchecked(0).rot180(self.n);
-                *vecs.get_unchecked_mut(5) = vecs.get_unchecked(4).rot45(self.n);
-                *vecs.get_unchecked_mut(6) = vecs.get_unchecked(4).rot90(self.n);
-                *vecs.get_unchecked_mut(7) = vecs.get_unchecked(6).rot45(self.n);
-            }
-
-            for (dir, (dist, v)) in dists.iter_mut().zip(vecs.iter()).enumerate() {
-                *dist = find_next_inner(&self.points, dir, *v);
-            }
-
-            // 辺の有無チェック
-            let (next0, next1) = next.split_at_mut(4);
-            let (dists0, dists1) = dists.split_at(4);
-            let vecs = &vecs[..4];
-
-            for (dir, (next, (dist, v_rot))) in next0
-                .iter_mut()
-                .zip(dists0.iter().zip(vecs.iter()))
-                .enumerate()
-            {
-                *next = check_edge_1(&self.edges, v, *v_rot, dist, dir);
-            }
-
-            for (dir, (next, (dist, v_rot))) in next1
-                .iter_mut()
-                .zip(dists1.iter().zip(vecs.iter()))
-                .enumerate()
-            {
-                *next = check_edge_2(&self.edges, v, *v_rot, dist, dir + 4);
-            }
-        }
-
         pub fn is_occupied(&self, v1: Vec2) -> bool {
             self.points[0][v1.y as usize].at(v1.x as u32)
         }
@@ -966,7 +868,9 @@ fn random_greedy(
     let mut next_p = [None; DIR_COUNT];
 
     for p2 in state.board.iter_points() {
-        state.board.find_next8(p2, &mut next_p);
+        for (dir, next) in next_p.iter_mut().enumerate() {
+            *next = state.board.find_next(p2, dir);
+        }
 
         for dir in 0..8 {
             let p1 = skip_none!(next_p[dir]);
@@ -1030,7 +934,10 @@ struct NextPointIterator<'a> {
 impl<'a> NextPointIterator<'a> {
     fn new(state: &'a State, rectangle: [Vec2; 4]) -> Self {
         let mut next = [None; DIR_COUNT];
-        state.board.find_next8(rectangle[0], &mut next);
+
+        for (dir, next) in next.iter_mut().enumerate() {
+            *next = state.board.find_next(rectangle[0], dir);
+        }
 
         let dir = 0;
         let phase = 0;
@@ -1236,48 +1143,32 @@ mod vector {
         }
 
         pub fn rot(&self, dir: usize, n: usize) -> Self {
-            let mut v = *self;
+            let mut x = self.x;
+            let mut y = self.y;
+            let n = n as i32;
 
             // 180°回転
             if ((dir >> 2) & 1) > 0 {
-                v = v.rot180(n);
+                x = n - 1 - x;
+                y = n - 1 - y;
             }
 
             // 90°回転
             if ((dir >> 1) & 1) > 0 {
-                v = v.rot90(n);
+                let xx = y;
+                let yy = n - 1 - x;
+                x = xx;
+                y = yy;
             }
 
             // 45°回転
             if (dir & 1) > 0 {
-                v = v.rot45(n);
+                let xx = (x + y) >> 1;
+                let yy = n - 1 - x + y;
+                x = xx;
+                y = yy;
             }
 
-            v
-        }
-
-        pub fn rot180(&self, n: usize) -> Vec2 {
-            let n = n as i32;
-            let x = n - 1 - self.x;
-            let y = n - 1 - self.y;
-            Vec2::new(x, y)
-        }
-
-        pub fn rot90(&self, n: usize) -> Vec2 {
-            let n = n as i32;
-            let xx = self.y;
-            let yy = n - 1 - self.x;
-            let x = xx;
-            let y = yy;
-            Vec2::new(x, y)
-        }
-
-        pub fn rot45(&self, n: usize) -> Vec2 {
-            let n = n as i32;
-            let xx = (self.x + self.y) >> 1;
-            let yy = n - 1 - self.x + self.y;
-            let x = xx;
-            let y = yy;
             Vec2::new(x, y)
         }
 
