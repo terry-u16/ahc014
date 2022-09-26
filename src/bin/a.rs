@@ -6,7 +6,7 @@ use proconio::*;
 #[allow(unused_imports)]
 use rand::prelude::*;
 use rand_pcg::Pcg64Mcg;
-use vector::{DIR_COUNT, UNITS};
+use vector::DIR_COUNT;
 
 use crate::vector::{rot_c, rot_cc, Vec2};
 
@@ -80,7 +80,7 @@ macro_rules! skip_none {
 }
 
 mod bitboard {
-    use crate::vector::{rot_c, Vec2, DIR_COUNT, UNITS};
+    use crate::vector::{Vec2, DIR_COUNT, UNITS};
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     struct Bitset {
@@ -247,35 +247,6 @@ mod bitboard {
 
             for y in y0..y1 {
                 count += self.points[0][y].get_range_popcnt(x0 as u32, x1 as u32);
-            }
-
-            count as usize
-        }
-
-        pub fn get_range_popcnt_diagonal(
-            &self,
-            x0: usize,
-            y0: usize,
-            dir: usize,
-            width: usize,
-            height: usize,
-        ) -> usize {
-            let mut count = 0;
-            let p = Vec2::new(x0 as i32, y0 as i32);
-            let v = UNITS[rot_c(dir)];
-
-            for i in 0..=height {
-                let p = p + v * i as i32;
-                let p = p.rot(dir, self.n);
-                let y = p.y as usize;
-                let x0 = p.x as u32;
-                let x1 = ((p.x + width as i32 + 1) as u32).min(63);
-
-                if self.points[dir].len() <= y {
-                    break;
-                }
-
-                count += self.points[dir][y].get_range_popcnt(x0 as u32, x1 as u32);
             }
 
             count as usize
@@ -695,13 +666,7 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
         let temp = f64::powf(temp0, 1.0 - time) * f64::powf(temp1, time);
 
         // 変形
-        let will_removed = if rng.gen_bool(0.8) {
-            try_break_rectangles(input, &solution, &mut rng)
-        } else {
-            try_break_rectangles_diagonal(input, &solution, &mut rng)
-        };
-
-        let will_removed = skip_none!(will_removed);
+        let will_removed = skip_none!(try_break_rectangles(input, &solution, &mut rng));
 
         if solution.rectangles.len() != 0 && will_removed.iter().all(|b| !b) {
             continue;
@@ -788,51 +753,6 @@ fn try_break_rectangles(
             let x = p.x as usize;
             let y = p.y as usize;
             x0 <= x && x < x1 && y0 <= y && y < y1
-        })
-        .collect();
-
-    Some(will_removed)
-}
-
-fn try_break_rectangles_diagonal(
-    input: &Input,
-    solution: &State,
-    rng: &mut rand_pcg::Pcg64Mcg,
-) -> Option<Vec<bool>> {
-    let dir = rng.gen_range(0, 4) * 2 + 1;
-    let x = rng.gen_range(0, input.n);
-    let y = rng.gen_range(0, input.n);
-    let width = rng.gen_range(0, input.n / 2);
-    let height = width;
-    let unit_u = UNITS[dir];
-    let unit_v = UNITS[rot_c(dir)];
-
-    let p0 = Vec2::new(x as i32, y as i32);
-    let p1 = p0 + unit_u * width as i32;
-    let p2 = p1 + unit_v * height as i32;
-    let p3 = p0 + unit_v * height as i32;
-
-    let count = solution
-        .board
-        .get_range_popcnt_diagonal(x, y, dir, width, height);
-
-    if (solution.rectangles.len() != 0 && count == 0) || count >= 50 {
-        return None;
-    }
-
-    fn between(p: Vec2, p0: Vec2, p1: Vec2, p2: Vec2) -> bool {
-        let p = p - p0;
-        let p1 = p1 - p0;
-        let p2 = p2 - p0;
-        p1.cross(p) <= 0 && p2.cross(p) >= 0
-    }
-
-    let will_removed = solution
-        .rectangles
-        .iter()
-        .map(|rect| {
-            let p = rect[0];
-            between(p, p0, p1, p3) && between(p, p2, p3, p1)
         })
         .collect();
 
