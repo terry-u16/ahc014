@@ -1,4 +1,4 @@
-use std::{collections::BinaryHeap, mem::swap, time::Instant};
+use std::{mem::swap, time::Instant};
 
 use bitboard::Board;
 #[allow(unused_imports)]
@@ -682,8 +682,6 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     let mut not_improved = 0;
 
     let mut ls_sampler = LargeSmallSampler::new(rng.gen());
-    let mut out_sampler = OutsideFirstSampler::new(&input, rng.gen());
-    let use_out_sampler = (input.m as f64 / (input.n * input.n) as f64).sqrt() < 0.2;
 
     loop {
         all_iter += 1;
@@ -709,11 +707,7 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
             continue;
         }
 
-        let state = if !use_out_sampler || rng.gen_bool(0.7) {
-            random_greedy(input, &will_removed, &solution, &mut ls_sampler)
-        } else {
-            random_greedy(input, &will_removed, &solution, &mut out_sampler)
-        };
+        let state = random_greedy(input, &will_removed, &solution, &mut ls_sampler);
 
         // スコア計算
         let new_score = state.calc_normalized_score(input);
@@ -849,9 +843,10 @@ fn random_greedy(
     input: &Input,
     will_removed: &[bool],
     state: &State,
-    sampler: &mut dyn Sampler<[Vec2; 4]>,
+    sampler: &mut impl Sampler<[Vec2; 4]>,
 ) -> State {
     // 削除予定の矩形・それに依存する矩形を削除
+    sampler.clear();
     let mut state = state.clone();
     let mut old_rectangles = Vec::with_capacity(state.rectangles.len() * 6 / 5);
     swap(&mut state.rectangles, &mut old_rectangles);
@@ -909,7 +904,7 @@ fn try_add_candidate(
     p1: Vec2,
     p2: Vec2,
     p3: Vec2,
-    sampler: &mut dyn Sampler<[Vec2; 4]>,
+    sampler: &mut impl Sampler<[Vec2; 4]>,
 ) {
     if !p0.in_map(input.n)
         || state.board.is_occupied(p0)
@@ -1011,11 +1006,13 @@ impl<'a> Iterator for NextPointIterator<'a> {
 trait Sampler<T> {
     fn push(&mut self, item: T);
     fn sample(&mut self) -> Option<T>;
+    fn clear(&mut self);
 }
 
 struct LargeSmallSampler {
     items_small: Vec<[Vec2; 4]>,
     items_large: Vec<[Vec2; 4]>,
+    init: bool,
     rng: Pcg64Mcg,
 }
 
@@ -1023,10 +1020,12 @@ impl LargeSmallSampler {
     fn new(seed: u128) -> Self {
         let items_small = Vec::with_capacity(32);
         let items_large = Vec::with_capacity(32);
+        let init = true;
         let rng = Pcg64Mcg::new(seed);
         Self {
             items_small,
             items_large,
+            init,
             rng,
         }
     }
@@ -1054,6 +1053,22 @@ impl Sampler<[Vec2; 4]> for LargeSmallSampler {
         let len_small = self.items_small.len();
         let len_large = self.items_large.len();
 
+        if self.init {
+            self.init = false;
+
+            if len_small + len_large == 0 {
+                return None;
+            }
+
+            let i = self.rng.gen_range(0, len_small + len_large);
+
+            if i < len_small {
+                return Some(self.items_small.swap_remove(i));
+            } else {
+                return Some(self.items_large.swap_remove(i - len_small));
+            }
+        }
+
         if len_small > 0 {
             let i = self.rng.gen_range(0, len_small);
             Some(self.items_small.swap_remove(i))
@@ -1064,63 +1079,11 @@ impl Sampler<[Vec2; 4]> for LargeSmallSampler {
             None
         }
     }
-}
 
-struct ScoredRect {
-    rectangle: [Vec2; 4],
-    score: i32,
-}
-
-impl ScoredRect {
-    fn new(rectangle: [Vec2; 4], score: i32) -> Self {
-        Self { rectangle, score }
-    }
-}
-
-impl PartialEq for ScoredRect {
-    fn eq(&self, other: &Self) -> bool {
-        self.score == other.score
-    }
-}
-
-impl Eq for ScoredRect {}
-
-impl PartialOrd for ScoredRect {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.score.partial_cmp(&other.score)
-    }
-}
-
-impl Ord for ScoredRect {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.score.cmp(&other.score)
-    }
-}
-
-struct OutsideFirstSampler<'a> {
-    queue: BinaryHeap<ScoredRect>,
-    input: &'a Input,
-    rng: Pcg64Mcg,
-}
-
-impl<'a> OutsideFirstSampler<'a> {
-    fn new(input: &'a Input, seed: u128) -> Self {
-        let queue = BinaryHeap::new();
-        let rng = Pcg64Mcg::new(seed);
-        Self { queue, input, rng }
-    }
-}
-
-impl<'a> Sampler<[Vec2; 4]> for OutsideFirstSampler<'a> {
-    fn push(&mut self, item: [Vec2; 4]) {
-        let weight = self.input.get_weight(item[0]);
-        let score = weight * self.rng.gen_range(1000, 2000);
-        let rect = ScoredRect::new(item, score);
-        self.queue.push(rect);
-    }
-
-    fn sample(&mut self) -> Option<[Vec2; 4]> {
-        self.queue.pop().map(|r| r.rectangle)
+    fn clear(&mut self) {
+        self.items_small.clear();
+        self.items_large.clear();
+        self.init = true;
     }
 }
 
