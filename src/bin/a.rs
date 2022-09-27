@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, mem::swap, time::Instant};
+use std::{mem::swap, time::Instant};
 
 use bitboard::Board;
 #[allow(unused_imports)]
@@ -657,9 +657,6 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
 
     let mut ls_sampler = LargeSmallSampler::new(rng.gen());
 
-    let mut graph = vec![vec![]; input.n * input.n];
-    let mut visited = vec![false; input.n * input.n];
-
     loop {
         all_iter += 1;
 
@@ -672,12 +669,7 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
         let temp = f64::powf(temp0, 1.0 - time) * f64::powf(temp1, time);
 
         // 変形
-        let will_removed = if rng.gen_bool(0.8) {
-            try_break_rectangles(input, &solution, &mut rng)
-        } else {
-            try_break_bfs(input, &solution, &mut graph, &mut visited, &mut rng)
-        };
-        let will_removed = skip_none!(will_removed);
+        let will_removed = skip_none!(try_break_rectangles(input, &solution, &mut rng));
 
         if solution.rectangles.len() != 0 && will_removed.iter().all(|b| !b) {
             continue;
@@ -759,80 +751,6 @@ fn try_break_rectangles(
             let x = p.x as usize;
             let y = p.y as usize;
             x0 <= x && x < x1 && y0 <= y && y < y1
-        })
-        .collect();
-
-    Some(will_removed)
-}
-
-fn try_break_bfs(
-    input: &Input,
-    solution: &State,
-    graph: &mut Vec<Vec<usize>>,
-    visited: &mut Vec<bool>,
-    rng: &mut rand_pcg::Pcg64Mcg,
-) -> Option<Vec<bool>> {
-    fn to_index(v: Vec2, n: usize) -> usize {
-        (v.y * n as i32 + v.x) as usize
-    }
-
-    let rect_len = solution.rectangles.len();
-
-    if rect_len == 0 {
-        return Some(vec![]);
-    }
-
-    for v in graph.iter_mut() {
-        v.clear();
-    }
-
-    for v in visited.iter_mut() {
-        *v = false;
-    }
-
-    for rect in solution.rectangles.iter() {
-        let mut prev = to_index(rect[2], input.n);
-        let mut current = to_index(rect[3], input.n);
-
-        for &p in rect {
-            let next = to_index(p, input.n);
-            let v = &mut graph[current];
-            v.push(prev);
-            v.push(next);
-            prev = current;
-            current = next;
-        }
-    }
-
-    let erase_count = rng.gen_range(1, 20);
-    let mut erased = 1;
-    let start = to_index(solution.rectangles[rng.gen_range(0, rect_len)][0], input.n);
-    let mut queue = VecDeque::new();
-    queue.push_back(start);
-    visited[start] = true;
-
-    'bfs: while let Some(v) = queue.pop_front() {
-        visited[v] = true;
-
-        for &v in graph[v].iter() {
-            if !visited[v] {
-                queue.push_back(v);
-                visited[v] = true;
-                erased += 1;
-
-                if erased >= erase_count {
-                    break 'bfs;
-                }
-            }
-        }
-    }
-
-    let will_removed = solution
-        .rectangles
-        .iter()
-        .map(|rect| {
-            let p = rect[0];
-            visited[to_index(p, input.n)]
         })
         .collect();
 
