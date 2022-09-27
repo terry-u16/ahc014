@@ -187,33 +187,43 @@ mod bitboard {
         }
 
         pub fn find_next(&self, v: Vec2, dir: usize) -> Option<Vec2> {
-            let v_rot = v.rot(dir, self.n);
-            let next = self.points[dir][v_rot.y as usize].find_next(v_rot.x as u32 + 1);
+            unsafe {
+                let v_rot = v.rot(dir, self.n);
+                let next = self
+                    .points
+                    .get_unchecked(dir)
+                    .get_unchecked(v_rot.y as usize)
+                    .find_next(v_rot.x as u32 + 1);
 
-            if let Some(next) = next {
-                let unit = UNITS[dir];
-                let d = next as i32 - v_rot.x;
+                if let Some(next) = next {
+                    let unit = *UNITS.get_unchecked(dir);
+                    let d = next as i32 - v_rot.x;
 
-                let (x1, x2, y, dir) = if (dir & 4) == 0 {
-                    (v_rot.x, v_rot.x + d, v_rot.y, dir)
+                    let (x1, x2, y, dir) = if (dir & 4) == 0 {
+                        (v_rot.x, v_rot.x + d, v_rot.y, dir)
+                    } else {
+                        let dir = dir & 3;
+                        let v_rot = v.rot(dir, self.n);
+                        let x1 = v_rot.x - d;
+                        let x2 = v_rot.x;
+                        (x1, x2, v_rot.y, dir)
+                    };
+
+                    let has_edge = self
+                        .edges
+                        .get_unchecked(dir)
+                        .get_unchecked(y as usize)
+                        .contains_range(x1 as u32, x2 as u32);
+
+                    if has_edge {
+                        None
+                    } else {
+                        let next = v + unit * d;
+                        Some(next)
+                    }
                 } else {
-                    let dir = dir & 3;
-                    let v_rot = v.rot(dir, self.n);
-                    let x1 = v_rot.x - d;
-                    let x2 = v_rot.x;
-                    (x1, x2, v_rot.y, dir)
-                };
-
-                let has_edge = self.edges[dir][y as usize].contains_range(x1 as u32, x2 as u32);
-
-                if has_edge {
                     None
-                } else {
-                    let next = v + unit * d;
-                    Some(next)
                 }
-            } else {
-                None
             }
         }
 
