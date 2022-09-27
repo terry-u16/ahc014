@@ -1,0 +1,1 @@
+dotnet run --project .\ScoreCollector\ScoreCollector\ScoreCollector.csproj -c Release

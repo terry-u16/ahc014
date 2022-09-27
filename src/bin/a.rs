@@ -621,27 +621,42 @@ impl std::fmt::Display for Output {
 }
 
 struct Parameter {
+    temp_high: f64,
+    temp_low: f64,
     duration: f64,
 }
 
 impl Parameter {
     fn new() -> Self {
+        let args = std::env::args().collect::<Vec<_>>();
+
+        let (temp_high, temp_low) = if args.len() == 3 {
+            eprintln!("reading parameters from args...");
+            (args[1].parse().unwrap(), args[2].parse().unwrap())
+        } else {
+            (10.0, 2.0)
+        };
+
         let duration_mul =
             std::env::var("DURATION_MUL").map_or_else(|_| 1.0, |val| val.parse::<f64>().unwrap());
         let duration = 4.98 * duration_mul;
-        Self { duration }
+        Self {
+            temp_high,
+            temp_low,
+            duration,
+        }
     }
 }
 
 fn main() {
-    let parameter = Parameter::new();
+    let params = Parameter::new();
     let input = Input::read();
-    let output = annealing(&input, State::init(&input), parameter.duration).to_output();
+    let output = annealing(&input, State::init(&input), params.duration, &params).to_output();
     eprintln!("Elapsed: {}ms", (Instant::now() - input.since).as_millis());
     println!("{}", output);
 }
 
-fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
+fn annealing(input: &Input, initial_solution: State, duration: f64, params: &Parameter) -> State {
     let mut solution = initial_solution;
     let mut best_solution = solution.clone();
     let mut best_score = solution.calc_normalized_score(input);
@@ -655,8 +670,8 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     let duration_inv = 1.0 / duration;
     let since = std::time::Instant::now();
 
-    let temp0 = 10.0;
-    let temp1 = 2.0;
+    let temp0 = params.temp_high;
+    let temp1 = params.temp_low;
 
     const MOVIE_FRAME_COUNT: usize = 300;
     let export_movie = std::env::var("MOVIE").is_ok();
