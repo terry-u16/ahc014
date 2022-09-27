@@ -856,6 +856,10 @@ fn random_greedy(
 
         let count = state.rectangles.len() - init_len;
 
+        // ロールバックする
+        // 初期状態から到達できないゴミが残ってしまうが、state.can_apply()で弾かれる
+        // 前回選ばれた頂点は再度選ばれやすくなってしまうが、許容
+        // TODO: 2回目でかつ更新したばかりの場合はロールバック不要
         for _ in 0..count {
             let rect = state.rectangles.pop().unwrap();
             state.remove(input, &rect);
