@@ -573,6 +573,10 @@ impl State {
         (self.score as f64 * input.score_coef).round() as i32
     }
 
+    fn calc_annealing_score(&self, input: &Input) -> f64 {
+        (self.score as f64 * input.score_coef).sqrt()
+    }
+
     fn to_output(&self) -> Output {
         Output::new(self.rectangles.clone())
     }
@@ -630,8 +634,7 @@ fn main() {
 fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     let mut solution = initial_solution;
     let mut best_solution = solution.clone();
-    let mut current_score = solution.calc_normalized_score(input);
-    let mut best_score = current_score;
+    let mut best_score = solution.calc_normalized_score(input);
 
     let mut all_iter = 0;
     let mut valid_iter = 0;
@@ -642,8 +645,8 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     let duration_inv = 1.0 / duration;
     let since = std::time::Instant::now();
 
-    let temp0 = 3e4;
-    let temp1 = 3e3;
+    let temp0 = 10.0;
+    let temp1 = 2.0;
 
     const MOVIE_FRAME_COUNT: usize = 300;
     let export_movie = std::env::var("MOVIE").is_ok();
@@ -675,23 +678,20 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
         let state = random_greedy(input, &will_removed, &solution, &mut ls_sampler);
 
         // スコア計算
-        let new_score = state.calc_normalized_score(input);
-        let score_diff = new_score - current_score;
+        let score_diff = state.calc_annealing_score(input) - solution.calc_annealing_score(input);
 
-        if score_diff >= 0 || rng.gen_bool(f64::exp(score_diff as f64 / temp)) {
+        if score_diff >= 0.0 || rng.gen_bool(f64::exp(score_diff as f64 / temp)) {
             // 解の更新
-            current_score = new_score;
             accepted_count += 1;
             solution = state;
 
-            if chmax!(best_score, current_score) {
+            if chmax!(best_score, solution.calc_normalized_score(input)) {
                 best_solution = solution.clone();
                 update_count += 1;
                 last_improved = time;
             } else {
-                if (time - last_improved) >= NOT_IMPROVED_THRESHOLD {
+                if time - last_improved >= NOT_IMPROVED_THRESHOLD {
                     solution = best_solution.clone();
-                    current_score = best_score;
                     last_improved = time;
                 }
             }
