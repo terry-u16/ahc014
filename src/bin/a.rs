@@ -649,8 +649,8 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
     let export_movie = std::env::var("MOVIE").is_ok();
     let mut movie = vec![];
 
-    const NOT_IMPROVED_THRESHOLD: usize = 10000;
-    let mut not_improved = 0;
+    const NOT_IMPROVED_THRESHOLD: f64 = 0.1;
+    let mut last_improved = 0.0;
 
     let mut ls_sampler = LargeSmallSampler::new(rng.gen());
 
@@ -687,14 +687,12 @@ fn annealing(input: &Input, initial_solution: State, duration: f64) -> State {
             if chmax!(best_score, current_score) {
                 best_solution = solution.clone();
                 update_count += 1;
-                not_improved = 0;
+                last_improved = time;
             } else {
-                not_improved += 1;
-
-                if not_improved >= NOT_IMPROVED_THRESHOLD {
+                if (time - last_improved) >= NOT_IMPROVED_THRESHOLD {
                     solution = best_solution.clone();
                     current_score = best_score;
-                    not_improved = 0;
+                    last_improved = time;
                 }
             }
         }
