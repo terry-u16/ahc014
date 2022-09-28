@@ -584,7 +584,7 @@ impl State {
     }
 
     fn calc_annealing_score(&self, input: &Input) -> f64 {
-        (self.score as f64 * input.score_coef).sqrt()
+        self.score as f64 * input.score_coef
     }
 
     fn to_output(&self) -> Output {
@@ -653,7 +653,7 @@ impl Parameter {
         let mut best_temp1 = 1.0;
         let mut best_score = 0.0;
 
-        const GRID_DIV: usize = 10;
+        const GRID_DIV: usize = 30;
 
         for i in 0..=GRID_DIV {
             for j in 0..=GRID_DIV {

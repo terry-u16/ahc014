@@ -31,8 +31,8 @@ try
             var input = await File.ReadAllLinesAsync(seedPath, ct);
 
             var random = Random.Shared;
-            var tempHigh = 5.0 * Math.Pow(10.0, random.NextDouble());
-            var tempLow = 1.0 * Math.Pow(10.0, random.NextDouble());
+            var tempHigh = 3e3 * Math.Pow(100.0, random.NextDouble());
+            var tempLow = 3e2 * Math.Pow(100.0, random.NextDouble());
 
             var outputPath = Path.Join(tempDirectory, $"{Guid.NewGuid()}.txt");
             using (var writer = new StreamWriter(outputPath))
