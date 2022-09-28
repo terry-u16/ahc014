@@ -627,14 +627,14 @@ struct Parameter {
 }
 
 impl Parameter {
-    fn new() -> Self {
+    fn new(input: &Input) -> Self {
         let args = std::env::args().collect::<Vec<_>>();
 
         let (temp_high, temp_low) = if args.len() == 3 {
             eprintln!("reading parameters from args...");
             (args[1].parse().unwrap(), args[2].parse().unwrap())
         } else {
-            (10.0, 2.0)
+            Self::get_best_temp(&input)
         };
 
         let duration_mul =
@@ -646,11 +646,48 @@ impl Parameter {
             duration,
         }
     }
+
+    fn get_best_temp(input: &Input) -> (f64, f64) {
+        let model = neural_network::generate_model();
+        let mut best_temp0 = 1.0;
+        let mut best_temp1 = 1.0;
+        let mut best_score = 0.0;
+
+        const GRID_DIV: usize = 10;
+
+        for i in 0..=GRID_DIV {
+            for j in 0..=GRID_DIV {
+                let temp0 = 5.0 * 10.0f64.powf(i as f64 / GRID_DIV as f64);
+                let temp1 = 10.0f64.powf(j as f64 / GRID_DIV as f64);
+                let input = Self::normalize_input(input, temp0, temp1);
+                let predicted_score = model.predict(&input)[0];
+
+                if chmax!(best_score, predicted_score) {
+                    best_temp0 = temp0;
+                    best_temp1 = temp1;
+                }
+            }
+        }
+
+        eprintln!("temp: {} {}", best_temp0, best_temp1);
+
+        (best_temp0, best_temp1)
+    }
+
+    fn normalize_input(input: &Input, temp0: f64, temp1: f64) -> Vec<f64> {
+        let n = (input.n - 31) as f64 / 30.0;
+        let density = input.m as f64 / (input.n * input.n) as f64 * 10.0;
+        let temp0 = temp0.log10();
+        let temp1 = temp1.log10();
+        vec![n, density, temp0, temp1]
+    }
 }
 
 fn main() {
-    let params = Parameter::new();
     let input = Input::read();
+    let params = Parameter::new(&input);
+    eprintln!("Elapsed: {}ms", (Instant::now() - input.since).as_millis());
+
     let output = annealing(&input, State::init(&input), params.duration, &params).to_output();
     eprintln!("Elapsed: {}ms", (Instant::now() - input.since).as_millis());
     println!("{}", output);
@@ -1255,5 +1292,192 @@ mod vector {
             let v = v.rot(1, 4);
             assert_eq!(v, Vec2::new(1, 1));
         }
+    }
+}
+
+mod base64 {
+    pub(super) fn to_f64(data: &[u8]) -> Vec<f64> {
+        const BASE64_MAP: &[u8] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut stream = vec![];
+
+        let mut cursor = 0;
+
+        while cursor + 4 <= data.len() {
+            let mut buffer = 0u32;
+
+            for i in 0..4 {
+                let c = data[cursor + i];
+                let shift = 6 * (3 - i);
+
+                for (i, &d) in BASE64_MAP.iter().enumerate() {
+                    if c == d {
+                        buffer |= (i as u32) << shift;
+                    }
+                }
+            }
+
+            for i in 0..3 {
+                let shift = 8 * (2 - i);
+                let value = (buffer >> shift) as u8;
+                stream.push(value);
+            }
+
+            cursor += 4;
+        }
+
+        let mut result = vec![];
+        cursor = 0;
+
+        while cursor + 8 <= stream.len() {
+            let p = stream.as_ptr() as *const f64;
+            let x = unsafe { *p.offset(cursor as isize / 8) };
+            result.push(x);
+            cursor += 8;
+        }
+
+        result
+    }
+}
+
+mod neural_network {
+    use crate::base64;
+
+    pub(super) struct NeuralNetwork {
+        in_weight: Vec<Vec<f64>>,
+        in_bias: Vec<f64>,
+        hidden1_weight: Vec<Vec<f64>>,
+        hidden1_bias: Vec<f64>,
+        hidden2_weight: Vec<Vec<f64>>,
+        hidden2_bias: Vec<f64>,
+        hidden3_weight: Vec<Vec<f64>>,
+        hidden3_bias: Vec<f64>,
+        out_weight: Vec<Vec<f64>>,
+        out_bias: Vec<f64>,
+    }
+
+    impl NeuralNetwork {
+        pub(super) fn predict(&self, x: &[f64]) -> Vec<f64> {
+            let x = multiply_matrix(&self.in_weight, x);
+            let x = add_vector(&self.in_bias, &x);
+            let x = apply(&x, relu);
+
+            let x = multiply_matrix(&self.hidden1_weight, &x);
+            let x = add_vector(&self.hidden1_bias, &x);
+            let x = apply(&x, relu);
+
+            let x = multiply_matrix(&self.hidden2_weight, &x);
+            let x = add_vector(&self.hidden2_bias, &x);
+            let x = apply(&x, relu);
+
+            let x = multiply_matrix(&self.hidden3_weight, &x);
+            let x = add_vector(&self.hidden3_bias, &x);
+            let x = apply(&x, relu);
+
+            let x = multiply_matrix(&self.out_weight, &x);
+            let x = add_vector(&self.out_bias, &x);
+
+            x
+        }
+    }
+
+    pub(super) fn generate_model() -> NeuralNetwork {
+        const WEIGHT_BASE64: &[u8] = b"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";
+        const INPUT_SIZE: usize = 4;
+        const HIDDEN_SIZE: usize = 16;
+        const OUTPUT_SIZE: usize = 1;
+        let weight = base64::to_f64(WEIGHT_BASE64);
+        let mut cursor = 0;
+
+        let in_weight = read_matrix(HIDDEN_SIZE, INPUT_SIZE, &weight, &mut cursor);
+        let in_bias = read_vector(HIDDEN_SIZE, &weight, &mut cursor);
+        let hidden1_weight = read_matrix(HIDDEN_SIZE, HIDDEN_SIZE, &weight, &mut cursor);
+        let hidden1_bias = read_vector(HIDDEN_SIZE, &weight, &mut cursor);
+        let hidden2_weight = read_matrix(HIDDEN_SIZE, HIDDEN_SIZE, &weight, &mut cursor);
+        let hidden2_bias = read_vector(HIDDEN_SIZE, &weight, &mut cursor);
+        let hidden3_weight = read_matrix(HIDDEN_SIZE, HIDDEN_SIZE, &weight, &mut cursor);
+        let hidden3_bias = read_vector(HIDDEN_SIZE, &weight, &mut cursor);
+        let out_weight = read_matrix(OUTPUT_SIZE, HIDDEN_SIZE, &weight, &mut cursor);
+        let out_bias = read_vector(OUTPUT_SIZE, &weight, &mut cursor);
+
+        NeuralNetwork {
+            in_weight,
+            in_bias,
+            hidden1_weight,
+            hidden1_bias,
+            hidden2_weight,
+            hidden2_bias,
+            hidden3_weight,
+            hidden3_bias,
+            out_weight,
+            out_bias,
+        }
+    }
+
+    fn read_matrix(row: usize, col: usize, data: &[f64], cursor: &mut usize) -> Vec<Vec<f64>> {
+        let mut matrix = Vec::with_capacity(row);
+
+        for _ in 0..row {
+            let vector = read_vector(col, data, cursor);
+            matrix.push(vector);
+        }
+
+        matrix
+    }
+
+    fn read_vector(n: usize, data: &[f64], cursor: &mut usize) -> Vec<f64> {
+        let mut vector = Vec::with_capacity(n);
+
+        for _ in 0..n {
+            vector.push(data[*cursor]);
+            *cursor += 1;
+        }
+
+        vector
+    }
+
+    fn multiply_matrix(matrix: &[Vec<f64>], vector: &[f64]) -> Vec<f64> {
+        let mut result = Vec::with_capacity(matrix.len());
+
+        for line in matrix.iter() {
+            debug_assert!(line.len() == vector.len());
+            let mut sum = 0.0;
+
+            for (x, y) in line.iter().zip(vector.iter()) {
+                sum += x * y;
+            }
+
+            result.push(sum);
+        }
+
+        result
+    }
+
+    fn add_vector(vector1: &[f64], vector2: &[f64]) -> Vec<f64> {
+        let mut result = Vec::with_capacity(vector1.len());
+        debug_assert!(vector1.len() == vector2.len());
+
+        for (x, y) in vector1.iter().zip(vector2.iter()) {
+            result.push(x + y);
+        }
+
+        result
+    }
+
+    fn apply<F>(vector: &[f64], f: F) -> Vec<f64>
+    where
+        F: Fn(f64) -> f64,
+    {
+        let mut result = Vec::with_capacity(vector.len());
+
+        for x in vector.iter() {
+            result.push(f(*x));
+        }
+
+        result
+    }
+
+    fn relu(x: f64) -> f64 {
+        x.max(0.0)
     }
 }
