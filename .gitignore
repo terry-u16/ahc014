@@ -13,3 +13,5 @@ Visualizer/Visualizer/obj
 ScoreCollector/.vs
 ScoreCollector/ScoreCollector/bin
 ScoreCollector/ScoreCollector/obj
+
+__pycache__

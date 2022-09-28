@@ -1,0 +1,15 @@
+version: '3'
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ahc014-gpu
+    volumes:
+      - ./src:/work
+    working_dir: /work
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [ gpu ]
