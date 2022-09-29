@@ -858,13 +858,14 @@ fn random_greedy(
     }
 
     // 複数回再構築をトライする
-    const TRIAL_COUNT: usize = 2;
+    const TRIAL_COUNT: usize = 3;
     let init_len = state.rectangles.len();
     let mut used = vec![];
     let mut best_rect = vec![];
     let mut best_score = state.calc_normalized_score(input);
+    let mut no_apply = false;
 
-    for _ in 0..TRIAL_COUNT {
+    for trial in 0..TRIAL_COUNT {
         loop {
             let rectangle = if let Some(rect) = sampler.sample() {
                 rect
@@ -886,6 +887,11 @@ fn random_greedy(
         }
 
         if chmax!(best_score, state.calc_normalized_score(input)) {
+            if trial == TRIAL_COUNT - 1 {
+                no_apply = true;
+                break;
+            }
+
             best_rect.clear();
             for &rect in state.rectangles[init_len..].iter() {
                 best_rect.push(rect);
@@ -897,7 +903,6 @@ fn random_greedy(
         // ロールバックする
         // 初期状態から到達できないゴミが残ってしまうが、state.can_apply()で弾かれる
         // 前回選ばれた頂点は再度選ばれやすくなってしまうが、許容
-        // TODO: 2回目でかつ更新したばかりの場合はロールバック不要
         for _ in 0..count {
             let rect = state.rectangles.pop().unwrap();
             state.remove(input, &rect);
@@ -908,8 +913,10 @@ fn random_greedy(
         }
     }
 
-    for rect in best_rect.iter() {
-        state.apply(input, rect);
+    if !no_apply {
+        for rect in best_rect.iter() {
+            state.apply(input, rect);
+        }
     }
 
     state
