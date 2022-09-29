@@ -659,6 +659,11 @@ impl Parameter {
             for j in 0..=GRID_DIV {
                 let temp0 = 5.0 * 10.0f64.powf(i as f64 / GRID_DIV as f64);
                 let temp1 = 10.0f64.powf(j as f64 / GRID_DIV as f64);
+
+                if temp0 < temp1 {
+                    continue;
+                }
+
                 let input = Self::normalize_input(input, temp0, temp1);
                 let predicted_score = model.predict(&input)[0];
 
