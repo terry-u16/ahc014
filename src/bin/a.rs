@@ -718,6 +718,8 @@ fn annealing(input: &Input, initial_solution: State, duration: f64, params: &Par
     const NOT_IMPROVED_THRESHOLD: f64 = 0.1;
     let mut last_improved = 0.0;
 
+    let random_large = (input.m as f64 / (input.n * input.n) as f64) < 0.08;
+    let mut ls_random_sampler = RandomLargeSmallSampler::new(rng.gen());
     let mut ls_sampler = LargeSmallSampler::new(rng.gen());
 
     loop {
@@ -738,7 +740,11 @@ fn annealing(input: &Input, initial_solution: State, duration: f64, params: &Par
             continue;
         }
 
-        let state = random_greedy(input, &will_removed, &solution, &mut ls_sampler);
+        let state = if random_large {
+            random_greedy(input, &will_removed, &solution, &mut ls_random_sampler)
+        } else {
+            random_greedy(input, &will_removed, &solution, &mut ls_sampler)
+        };
 
         // スコア計算
         let score_diff = state.calc_annealing_score(input) - solution.calc_annealing_score(input);
@@ -1027,14 +1033,14 @@ trait Sampler<T> {
     fn clear(&mut self);
 }
 
-struct LargeSmallSampler {
+struct RandomLargeSmallSampler {
     items_small: Vec<[Vec2; 4]>,
     items_large: Vec<[Vec2; 4]>,
     init: bool,
     rng: Pcg64Mcg,
 }
 
-impl LargeSmallSampler {
+impl RandomLargeSmallSampler {
     fn new(seed: u128) -> Self {
         let items_small = Vec::with_capacity(32);
         let items_large = Vec::with_capacity(32);
@@ -1049,7 +1055,7 @@ impl LargeSmallSampler {
     }
 }
 
-impl Sampler<[Vec2; 4]> for LargeSmallSampler {
+impl Sampler<[Vec2; 4]> for RandomLargeSmallSampler {
     fn push(&mut self, item: [Vec2; 4]) {
         let p0 = item[0];
         let p1 = item[1];
@@ -1102,6 +1108,64 @@ impl Sampler<[Vec2; 4]> for LargeSmallSampler {
         self.items_small.clear();
         self.items_large.clear();
         self.init = true;
+    }
+}
+
+struct LargeSmallSampler {
+    items_small: Vec<[Vec2; 4]>,
+    items_large: Vec<[Vec2; 4]>,
+    rng: Pcg64Mcg,
+}
+
+impl LargeSmallSampler {
+    fn new(seed: u128) -> Self {
+        let items_small = Vec::with_capacity(32);
+        let items_large = Vec::with_capacity(32);
+        let rng = Pcg64Mcg::new(seed);
+        Self {
+            items_small,
+            items_large,
+            rng,
+        }
+    }
+}
+
+impl Sampler<[Vec2; 4]> for LargeSmallSampler {
+    fn push(&mut self, item: [Vec2; 4]) {
+        let p0 = item[0];
+        let p1 = item[1];
+        let p3 = item[3];
+
+        let v0 = p1 - p0;
+        let v1 = p3 - p0;
+        let norm0 = v0.norm2_sq();
+        let norm1 = v1.norm2_sq();
+
+        if (norm0 == 1 && norm1 == 1) || (norm0 == 2 && norm1 == 2) {
+            self.items_small.push(item);
+        } else {
+            self.items_large.push(item);
+        }
+    }
+
+    fn sample(&mut self) -> Option<[Vec2; 4]> {
+        let len_small = self.items_small.len();
+        let len_large = self.items_large.len();
+
+        if len_small > 0 {
+            let i = self.rng.gen_range(0, len_small);
+            Some(self.items_small.swap_remove(i))
+        } else if len_large > 0 {
+            let i = self.rng.gen_range(0, len_large);
+            Some(self.items_large.swap_remove(i))
+        } else {
+            None
+        }
+    }
+
+    fn clear(&mut self) {
+        self.items_small.clear();
+        self.items_large.clear();
     }
 }
 
