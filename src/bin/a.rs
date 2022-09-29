@@ -820,6 +820,9 @@ fn try_break_rectangles(
     Some(will_removed)
 }
 
+static mut USED_IN_GREEDY: Vec<[Vec2; 4]> = vec![];
+static mut BEST_RECT_IN_GREEDY: Vec<[Vec2; 4]> = vec![];
+
 fn random_greedy(
     input: &Input,
     will_removed: &[bool],
@@ -860,62 +863,65 @@ fn random_greedy(
     // 複数回再構築をトライする
     const TRIAL_COUNT: usize = 3;
     let init_len = state.rectangles.len();
-    let mut used = vec![];
-    let mut best_rect = vec![];
     let mut best_score = state.calc_normalized_score(input);
     let mut no_apply = false;
 
-    for trial in 0..TRIAL_COUNT {
-        loop {
-            let rectangle = if let Some(rect) = sampler.sample() {
-                rect
-            } else {
-                break;
-            };
+    unsafe {
+        BEST_RECT_IN_GREEDY.clear();
+        USED_IN_GREEDY.clear();
 
-            used.push(rectangle);
+        for trial in 0..TRIAL_COUNT {
+            loop {
+                let rectangle = if let Some(rect) = sampler.sample() {
+                    rect
+                } else {
+                    break;
+                };
 
-            if !state.can_apply(&rectangle) {
-                continue;
+                USED_IN_GREEDY.push(rectangle);
+
+                if !state.can_apply(&rectangle) {
+                    continue;
+                }
+
+                state.apply(input, &rectangle);
+
+                for (p0, p1, p2, p3) in NextPointIterator::new(&state, rectangle) {
+                    try_add_candidate(input, &state, p0, p1, p2, p3, sampler)
+                }
             }
 
-            state.apply(input, &rectangle);
+            if chmax!(best_score, state.calc_normalized_score(input)) {
+                if trial == TRIAL_COUNT - 1 {
+                    no_apply = true;
+                    break;
+                }
 
-            for (p0, p1, p2, p3) in NextPointIterator::new(&state, rectangle) {
-                try_add_candidate(input, &state, p0, p1, p2, p3, sampler)
+                BEST_RECT_IN_GREEDY.clear();
+                for &rect in state.rectangles[init_len..].iter() {
+                    BEST_RECT_IN_GREEDY.push(rect);
+                }
+            }
+
+            let count = state.rectangles.len() - init_len;
+
+            // ロールバックする
+            // 初期状態から到達できないゴミが残ってしまうが、state.can_apply()で弾かれる
+            // 前回選ばれた頂点は再度選ばれやすくなってしまうが、許容
+            for _ in 0..count {
+                let rect = state.rectangles.pop().unwrap();
+                state.remove(input, &rect);
+            }
+
+            while let Some(rect) = USED_IN_GREEDY.pop() {
+                sampler.push(rect);
             }
         }
 
-        if chmax!(best_score, state.calc_normalized_score(input)) {
-            if trial == TRIAL_COUNT - 1 {
-                no_apply = true;
-                break;
+        if !no_apply {
+            for rect in BEST_RECT_IN_GREEDY.iter() {
+                state.apply(input, rect);
             }
-
-            best_rect.clear();
-            for &rect in state.rectangles[init_len..].iter() {
-                best_rect.push(rect);
-            }
-        }
-
-        let count = state.rectangles.len() - init_len;
-
-        // ロールバックする
-        // 初期状態から到達できないゴミが残ってしまうが、state.can_apply()で弾かれる
-        // 前回選ばれた頂点は再度選ばれやすくなってしまうが、許容
-        for _ in 0..count {
-            let rect = state.rectangles.pop().unwrap();
-            state.remove(input, &rect);
-        }
-
-        while let Some(rect) = used.pop() {
-            sampler.push(rect);
-        }
-    }
-
-    if !no_apply {
-        for rect in best_rect.iter() {
-            state.apply(input, rect);
         }
     }
 
