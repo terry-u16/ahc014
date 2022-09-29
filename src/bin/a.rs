@@ -1,4 +1,7 @@
-use std::{mem::swap, time::Instant};
+use std::{
+    mem::{swap, MaybeUninit},
+    time::Instant,
+};
 
 use bitboard::Board;
 #[allow(unused_imports)]
@@ -228,27 +231,52 @@ mod bitboard {
         }
 
         pub fn is_occupied(&self, v1: Vec2) -> bool {
-            self.points[0][v1.y as usize].at(v1.x as u32)
+            unsafe {
+                self.points
+                    .get_unchecked(0)
+                    .get_unchecked(v1.y as usize)
+                    .at(v1.x as u32)
+            }
         }
 
         pub fn can_connect(&self, v1: Vec2, v2: Vec2) -> bool {
-            let (dir, y, x1, x2) = self.get_rot4(v1, v2);
-            let has_point = self.points[dir][y].contains_range(x1 + 1, x2);
-            let has_edge = self.edges[dir][y].contains_range(x1, x2);
-            !has_point && !has_edge
+            unsafe {
+                let (dir, y, x1, x2) = self.get_rot4(v1, v2);
+                let has_point = self
+                    .points
+                    .get_unchecked(dir)
+                    .get_unchecked(y)
+                    .contains_range(x1 + 1, x2);
+                let has_edge = self
+                    .edges
+                    .get_unchecked(dir)
+                    .get_unchecked(y)
+                    .contains_range(x1, x2);
+                !has_point && !has_edge
+            }
         }
 
         pub fn add_point(&mut self, v: Vec2) {
             for dir in 0..DIR_COUNT {
                 let v = v.rot(dir, self.n);
-                self.points[dir][v.y as usize].set(v.x as u32);
+                unsafe {
+                    self.points
+                        .get_unchecked_mut(dir)
+                        .get_unchecked_mut(v.y as usize)
+                        .set(v.x as u32);
+                }
             }
         }
 
         pub fn remove_point(&mut self, v: Vec2) {
             for dir in 0..DIR_COUNT {
                 let v = v.rot(dir, self.n);
-                self.points[dir][v.y as usize].unset(v.x as u32);
+                unsafe {
+                    self.points
+                        .get_unchecked_mut(dir)
+                        .get_unchecked_mut(v.y as usize)
+                        .unset(v.x as u32);
+                }
             }
         }
 
@@ -268,9 +296,11 @@ mod bitboard {
             let x0 = v0.x as u32;
             let y1 = (y0 as i32 + height) as usize;
             let x1 = x0 + width as u32;
-            let edges = &mut self.edges[dir];
-            edges[y0].set_range(x0, x1);
-            edges[y1].set_range(x0, x1);
+            unsafe {
+                let edges = self.edges.get_unchecked_mut(dir);
+                edges.get_unchecked_mut(y0).set_range(x0, x1);
+                edges.get_unchecked_mut(y1).set_range(x0, x1);
+            }
         }
 
         pub fn disconnect_parallel(&mut self, v0: Vec2, width: i32, height: i32, dir: usize) {
@@ -279,9 +309,11 @@ mod bitboard {
             let x0 = v0.x as u32;
             let y1 = (y0 as i32 + height) as usize;
             let x1 = x0 + width as u32;
-            let edges = &mut self.edges[dir];
-            edges[y0].unset_range(x0, x1);
-            edges[y1].unset_range(x0, x1);
+            unsafe {
+                let edges = self.edges.get_unchecked_mut(dir);
+                edges.get_unchecked_mut(y0).unset_range(x0, x1);
+                edges.get_unchecked_mut(y1).unset_range(x0, x1);
+            }
         }
 
         pub fn iter_points(&self) -> impl Iterator<Item = Vec2> {
@@ -492,9 +524,11 @@ impl State {
         }
 
         for (i, &from) in rectangle.iter().enumerate() {
-            let to = rectangle[(i + 1) % 4];
-            if !self.board.can_connect(from, to) {
-                return false;
+            unsafe {
+                let to = *rectangle.get_unchecked((i + 1) % 4);
+                if !self.board.can_connect(from, to) {
+                    return false;
+                }
             }
         }
 
@@ -502,81 +536,95 @@ impl State {
     }
 
     fn apply(&mut self, input: &Input, rectangle: &[Vec2; 4]) {
-        self.board.add_point(rectangle[0]);
-        self.rectangles.push(rectangle.clone());
-        self.score += input.get_weight(rectangle[0]);
+        unsafe {
+            let p = *rectangle.get_unchecked(0);
+            self.board.add_point(p);
+            self.rectangles.push(rectangle.clone());
+            self.score += input.get_weight(p);
 
-        let mut begin = 0;
-        let mut edges = [Vec2::default(); 4];
+            let mut begin = 0;
+            let mut edges: [MaybeUninit<Vec2>; 4] = MaybeUninit::uninit().assume_init();
 
-        for (i, edge) in edges.iter_mut().enumerate() {
-            *edge = rectangle[(i + 1) & 3] - rectangle[i];
-        }
-
-        for i in 0..4 {
-            let p = &edges[i];
-            if p.x > 0 && p.y >= 0 {
-                begin = i;
-                break;
+            for (i, edge) in edges.iter_mut().enumerate() {
+                *edge = MaybeUninit::new(
+                    *rectangle.get_unchecked((i + 1) & 3) - *rectangle.get_unchecked(i),
+                );
             }
+
+            let edges: [Vec2; 4] = std::mem::transmute(edges);
+
+            for i in 0..4 {
+                let p = edges.get_unchecked(i);
+                if p.x > 0 && p.y >= 0 {
+                    begin = i;
+                    break;
+                }
+            }
+
+            let p0 = *rectangle.get_unchecked(begin);
+            let p1 = *rectangle.get_unchecked((begin + 1) & 3);
+            let p3 = *rectangle.get_unchecked((begin + 3) & 3);
+
+            let width = p1.x - p0.x;
+            let height = p3.y - p0.y;
+            let dir = if p1.y - p0.y == 0 { 0 } else { 1 };
+            let height_mul = if dir == 0 { 1 } else { 2 };
+
+            self.board
+                .connect_parallel(p0, width, height * height_mul, dir);
+
+            let (width, height) = (height, width);
+            let dir = rot_cc(dir);
+            self.board
+                .connect_parallel(p1, width, height * height_mul, dir);
         }
-
-        let p0 = rectangle[begin];
-        let p1 = rectangle[(begin + 1) & 3];
-        let p3 = rectangle[(begin + 3) & 3];
-
-        let width = p1.x - p0.x;
-        let height = p3.y - p0.y;
-        let dir = if p1.y - p0.y == 0 { 0 } else { 1 };
-        let height_mul = if dir == 0 { 1 } else { 2 };
-
-        self.board
-            .connect_parallel(p0, width, height * height_mul, dir);
-
-        let (width, height) = (height, width);
-        let dir = rot_cc(dir);
-        self.board
-            .connect_parallel(p1, width, height * height_mul, dir);
     }
 
     fn remove(&mut self, input: &Input, rectangle: &[Vec2; 4]) {
-        self.board.remove_point(rectangle[0]);
+        unsafe {
+            let p = *rectangle.get_unchecked(0);
+            self.board.remove_point(p);
 
-        // rectanglesのupdateはしないことに注意！
-        // self.rectangles.push(rectangle.clone());
-        self.score -= input.get_weight(rectangle[0]);
+            // rectanglesのupdateはしないことに注意！
+            // self.rectangles.push(rectangle.clone());
+            self.score -= input.get_weight(p);
 
-        let mut begin = 0;
-        let mut edges = [Vec2::default(); 4];
+            let mut begin = 0;
+            let mut edges: [MaybeUninit<Vec2>; 4] = MaybeUninit::uninit().assume_init();
 
-        for (i, edge) in edges.iter_mut().enumerate() {
-            *edge = rectangle[(i + 1) & 3] - rectangle[i];
-        }
-
-        for i in 0..4 {
-            let p = &edges[i];
-            if p.x > 0 && p.y >= 0 {
-                begin = i;
-                break;
+            for (i, edge) in edges.iter_mut().enumerate() {
+                *edge = MaybeUninit::new(
+                    *rectangle.get_unchecked((i + 1) & 3) - *rectangle.get_unchecked(i),
+                );
             }
+
+            let edges: [Vec2; 4] = std::mem::transmute(edges);
+
+            for i in 0..4 {
+                let p = edges.get_unchecked(i);
+                if p.x > 0 && p.y >= 0 {
+                    begin = i;
+                    break;
+                }
+            }
+
+            let p0 = *rectangle.get_unchecked(begin);
+            let p1 = *rectangle.get_unchecked((begin + 1) & 3);
+            let p3 = *rectangle.get_unchecked((begin + 3) & 3);
+
+            let width = p1.x - p0.x;
+            let height = p3.y - p0.y;
+            let dir = if p1.y - p0.y == 0 { 0 } else { 1 };
+            let height_mul = if dir == 0 { 1 } else { 2 };
+
+            self.board
+                .disconnect_parallel(p0, width, height * height_mul, dir);
+
+            let (width, height) = (height, width);
+            let dir = rot_cc(dir);
+            self.board
+                .disconnect_parallel(p1, width, height * height_mul, dir);
         }
-
-        let p0 = rectangle[begin];
-        let p1 = rectangle[(begin + 1) & 3];
-        let p3 = rectangle[(begin + 3) & 3];
-
-        let width = p1.x - p0.x;
-        let height = p3.y - p0.y;
-        let dir = if p1.y - p0.y == 0 { 0 } else { 1 };
-        let height_mul = if dir == 0 { 1 } else { 2 };
-
-        self.board
-            .disconnect_parallel(p0, width, height * height_mul, dir);
-
-        let (width, height) = (height, width);
-        let dir = rot_cc(dir);
-        self.board
-            .disconnect_parallel(p1, width, height * height_mul, dir);
     }
 
     fn calc_normalized_score(&self, input: &Input) -> i32 {
