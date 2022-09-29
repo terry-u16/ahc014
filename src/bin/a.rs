@@ -802,7 +802,7 @@ fn try_break_rectangles(
     let y1 = y0 + size;
     let count = solution.board.get_range_popcnt(x0, y0, x1, y1);
 
-    if (solution.rectangles.len() != 0 && count == 0) || count >= 50 {
+    if (solution.rectangles.len() != 0 && count == 0) || count >= 30 {
         return None;
     }
 
