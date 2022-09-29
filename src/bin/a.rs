@@ -873,8 +873,8 @@ fn try_break_rectangles(
     Some(will_removed)
 }
 
-static mut USED_IN_GREEDY: Vec<[Vec2; 4]> = vec![];
-static mut BEST_RECT_IN_GREEDY: Vec<[Vec2; 4]> = vec![];
+static mut USED_IN_GREEDY: Vec<[Vec2; 4]> = Vec::new();
+static mut BEST_RECT_IN_GREEDY: Vec<[Vec2; 4]> = Vec::new();
 
 fn random_greedy(
     input: &Input,
