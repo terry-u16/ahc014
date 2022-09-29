@@ -13,7 +13,7 @@ File.Move(@"..\target\release\ahc014-a.exe", @".\ahc014-a.exe");
 
 var resultFilePath = $@".\data\parameter_sample\result_{DateTimeOffset.Now.ToString("yyyyMMdd_HHmmss")}.csv";
 await using var resultWriter = new StreamWriter(resultFilePath, false);
-await resultWriter.WriteLineAsync("seed,score,temp0,temp1");
+await resultWriter.WriteLineAsync("seed,score0,score1,temp0,temp1");
 
 var tempDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 Directory.CreateDirectory(tempDirectory);
@@ -31,22 +31,26 @@ try
             var input = await File.ReadAllLinesAsync(seedPath, ct);
 
             var random = Random.Shared;
-            var tempHigh = 3e3 * Math.Pow(100.0, random.NextDouble());
-            var tempLow = 3e2 * Math.Pow(100.0, random.NextDouble());
+            var tempHigh = 5.0 * Math.Pow(10.0, random.NextDouble());
+            var tempLow = 1.0 * Math.Pow(10.0, random.NextDouble());
+            var scores = new int[2];
 
-            var outputPath = Path.Join(tempDirectory, $"{Guid.NewGuid()}.txt");
-            using (var writer = new StreamWriter(outputPath))
+            for (int sampler = 0; sampler < scores.Length; sampler++)
             {
-                foreach (var line in await Run($@".\ahc014-a.exe {tempHigh} {tempLow}", input, ct))
+                var outputPath = Path.Join(tempDirectory, $"{Guid.NewGuid()}.txt");
+                using (var writer = new StreamWriter(outputPath))
                 {
-                    await writer.WriteLineAsync(line);
+                    foreach (var line in await Run($@".\ahc014-a.exe {tempHigh} {tempLow} {sampler}", input, ct))
+                    {
+                        await writer.WriteLineAsync(line);
+                    }
                 }
+
+                var scoreText = (await Run($@".\vis.exe {seedPath} {outputPath}", Enumerable.Empty<string>(), ct)).First();
+                scores[sampler] = int.Parse(scoreText.Replace("Score = ", ""));
             }
 
-            var scoreText = (await Run($@".\vis.exe {seedPath} {outputPath}", Enumerable.Empty<string>(), ct)).First();
-            var score = int.Parse(scoreText.Replace("Score = ", ""));
-
-            var resultText = $"{seed},{score},{tempHigh},{tempLow}";
+            var resultText = $"{seed},{scores[0]},{scores[1]},{tempHigh},{tempLow}";
 
             lock (lockObject)
             {
