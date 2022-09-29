@@ -924,6 +924,8 @@ fn random_greedy(
         USED_IN_GREEDY.clear();
 
         for trial in 0..TRIAL_COUNT {
+            sampler.init();
+            
             loop {
                 let rectangle = if let Some(rect) = sampler.sample() {
                     rect
@@ -1091,6 +1093,7 @@ trait Sampler<T> {
     fn push(&mut self, item: T);
     fn sample(&mut self) -> Option<T>;
     fn clear(&mut self);
+    fn init(&mut self);
 }
 
 struct LargeSmallSampler {
@@ -1167,6 +1170,9 @@ impl Sampler<[Vec2; 4]> for LargeSmallSampler {
     fn clear(&mut self) {
         self.items_small.clear();
         self.items_large.clear();
+    }
+
+    fn init(&mut self) {
         self.init = true;
     }
 }
