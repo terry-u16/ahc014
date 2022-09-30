@@ -705,8 +705,8 @@ impl Parameter {
 
         for i in 0..=GRID_DIV {
             for j in 0..=GRID_DIV {
-                let temp0 = 5.0 * 10.0f64.powf(i as f64 / GRID_DIV as f64);
-                let temp1 = 10.0f64.powf(j as f64 / GRID_DIV as f64);
+                let temp0 = 5.0 * 5.0f64.powf(i as f64 / GRID_DIV as f64);
+                let temp1 = 2.0 * 5.0f64.powf(j as f64 / GRID_DIV as f64);
 
                 if temp0 < temp1 {
                     continue;
