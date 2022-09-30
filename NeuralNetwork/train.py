@@ -13,7 +13,7 @@ import loader
 
 # %%
 TRAINING_DATA_RATIO = 0.75
-BATCH_SIZE = 1024
+BATCH_SIZE = 4096
 
 # %%
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -40,8 +40,7 @@ df["N"] = normalize_n(df["N"])
 df["Density"] = normalize_density(df["Density"])
 df["temp0"] = normalize_temp(df["temp0"])
 df["temp1"] = normalize_temp(df["temp1"])
-df["score0"] = normalize_score(df["score0"])
-df["score1"] = normalize_score(df["score1"])
+df["score"] = normalize_score(df["score"])
 print(df)
 # %%
 tranining_len = int(len(df) * TRAINING_DATA_RATIO)
@@ -50,7 +49,7 @@ df_valid = df[tranining_len:]
 df_train
 # %%
 X_COLS = ["N", "Density", "temp0", "temp1"]
-Y_COLS = ["score0", "score1"]
+Y_COLS = ["score"]
 df_X_train = df_train[X_COLS]
 df_y_train = df_train[Y_COLS]
 df_X_valid = df_valid[X_COLS]
@@ -159,18 +158,17 @@ current_time = datetime.datetime.now()
 model_path = f"./data/models/{TIMESTAMP}.pth"
 torch.save(model.cpu().state_dict(), model_path)
 # %%
-n = X_train[0].numpy()[0]
-density = X_train[0].numpy()[1]
-print(f"{n} {density}")
+n = X_valid[0].numpy()[0]
+density = X_valid[0].numpy()[1]
 
-for i in range(11):
-    for j in range(11):
-        temp0 = np.log10(5 * np.power(10.0, i / 10))
-        temp1 = np.log10(np.power(10.0, j / 10))
-
-        print(f"{temp0} {temp1}")
-        x = torch.from_numpy(np.array([n, density, temp0, temp1])).float().to(device)
-        score = model.to(device)(x).cpu().detach().numpy()
-        print(f"{np.power(10, temp0):.2f} {np.power(10, temp1):.2f} {score*1000000}")
+for seed in range(6):
+    print(f"seed: {seed}")
+    for i in range(10):
+        for j in range(10):
+            temp0 = i * 0.1 + np.log10(5)
+            temp1 = j * 0.1
+            x = torch.from_numpy(np.array([n, density, temp0, temp1])).float().to(device)
+            score = model.to(device)(x).cpu().detach().numpy()
+            print(f"{np.power(10, temp0):.2f} {np.power(10, temp1):.2f} {score*1000000}")
 
 # %%

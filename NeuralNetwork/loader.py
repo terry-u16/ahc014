@@ -30,4 +30,4 @@ def load_df() -> pd.DataFrame:
     df_param = load_input_params("./data/in/")
     df_score = df_score.merge(df_param, left_on="seed", right_index=True, how="left")
 
-    return df_score[["N", "Density", "temp0", "temp1", "score0", "score1"]]
+    return df_score[["N", "Density", "temp0", "temp1", "score"]]

@@ -13,12 +13,11 @@ class NeuralNetwork(nn.Module):
         self.layer_out  = nn.Linear(HIDDEN_SIZE, output_size)
 
         self.relu = nn.ReLU()
-        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.relu(self.layer_in(x))
         x = self.relu(self.layer_hidden1(x))
         x = self.relu(self.layer_hidden2(x))
         x = self.relu(self.layer_hidden3(x))
-        x = self.sigmoid(self.layer_out(x)) * 3
+        x = self.layer_out(x)
         return x
