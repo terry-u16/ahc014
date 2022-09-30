@@ -191,10 +191,9 @@ mod bitboard {
 
         pub fn find_next(&self, v: Vec2, dir: usize) -> Option<Vec2> {
             unsafe {
+                let p = self.points.get_unchecked(dir);
                 let v_rot = v.rot(dir, self.n);
-                let next = self
-                    .points
-                    .get_unchecked(dir)
+                let next = p
                     .get_unchecked(v_rot.y as usize)
                     .find_next(v_rot.x as u32 + 1);
 
