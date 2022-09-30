@@ -25,14 +25,14 @@ try
 
     while (true)
     {
-        await Parallel.ForEachAsync(Enumerable.Range(0, 10000), option, async (seed, ct) =>
+        await Parallel.ForEachAsync(Enumerable.Range(1, 49999), option, async (seed, ct) =>
         {
             var seedPath = $@".\data\in\{seed:0000}.txt";
             var input = await File.ReadAllLinesAsync(seedPath, ct);
 
             var random = Random.Shared;
-            var tempHigh = 3e3 * Math.Pow(100.0, random.NextDouble());
-            var tempLow = 3e2 * Math.Pow(100.0, random.NextDouble());
+            var tempHigh = 5.0 * Math.Pow(5.0, random.NextDouble());
+            var tempLow = 2.0 * Math.Pow(5.0, random.NextDouble());
 
             var outputPath = Path.Join(tempDirectory, $"{Guid.NewGuid()}.txt");
             using (var writer = new StreamWriter(outputPath))
