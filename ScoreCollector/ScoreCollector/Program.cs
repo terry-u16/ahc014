@@ -25,7 +25,7 @@ try
 
     while (true)
     {
-        await Parallel.ForEachAsync(Enumerable.Range(1, 9999), option, async (seed, ct) =>
+        await Parallel.ForEachAsync(Enumerable.Range(0, 10000), option, async (seed, ct) =>
         {
             var seedPath = $@".\data\in\{seed:0000}.txt";
             var input = await File.ReadAllLinesAsync(seedPath, ct);
