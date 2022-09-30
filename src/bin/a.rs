@@ -671,7 +671,6 @@ impl std::fmt::Display for Output {
 struct Parameter {
     temp_high: f64,
     temp_low: f64,
-    use_default_sampler: bool,
     duration: f64,
 }
 
@@ -679,13 +678,9 @@ impl Parameter {
     fn new(input: &Input) -> Self {
         let args = std::env::args().collect::<Vec<_>>();
 
-        let (temp_high, temp_low, use_default_sampler) = if args.len() == 4 {
+        let (temp_high, temp_low) = if args.len() == 3 {
             eprintln!("reading parameters from args...");
-            (
-                args[1].parse().unwrap(),
-                args[2].parse().unwrap(),
-                args[3].parse::<i32>().unwrap() == 1,
-            )
+            (args[1].parse().unwrap(), args[2].parse().unwrap())
         } else {
             Self::get_best_temp(&input)
         };
@@ -696,12 +691,11 @@ impl Parameter {
         Self {
             temp_high,
             temp_low,
-            use_default_sampler,
             duration,
         }
     }
 
-    fn get_best_temp(input: &Input) -> (f64, f64, bool) {
+    fn get_best_temp(input: &Input) -> (f64, f64) {
         let model = neural_network::generate_model();
         let mut best_temp0 = 1.0;
         let mut best_temp1 = 1.0;
@@ -731,7 +725,7 @@ impl Parameter {
         eprintln!("temp: {} {}", best_temp0, best_temp1);
         eprintln!("predicted_score: {}", best_score * 1e6);
 
-        (best_temp0, best_temp1, todo!())
+        (best_temp0, best_temp1)
     }
 
     fn normalize_input(input: &Input, temp0: f64, temp1: f64) -> Vec<f64> {
@@ -778,7 +772,6 @@ fn annealing(input: &Input, initial_solution: State, duration: f64, params: &Par
     let mut last_improved = 0.0;
 
     let mut ls_sampler = LargeSmallSampler::new(rng.gen());
-    let mut strict_ls_sampler = StrictLargeSmallSampler::new(rng.gen());
 
     loop {
         all_iter += 1;
@@ -798,11 +791,7 @@ fn annealing(input: &Input, initial_solution: State, duration: f64, params: &Par
             continue;
         }
 
-        let state = if params.use_default_sampler {
-            random_greedy(input, &will_removed, &solution, &mut ls_sampler)
-        } else {
-            random_greedy(input, &will_removed, &solution, &mut strict_ls_sampler)
-        };
+        let state = random_greedy(input, &will_removed, &solution, &mut ls_sampler);
 
         // スコア計算
         let score_diff = state.calc_annealing_score(input) - solution.calc_annealing_score(input);
@@ -936,7 +925,7 @@ fn random_greedy(
 
         for trial in 0..TRIAL_COUNT {
             sampler.init();
-
+            
             loop {
                 let rectangle = if let Some(rect) = sampler.sample() {
                     rect
@@ -1185,68 +1174,6 @@ impl Sampler<[Vec2; 4]> for LargeSmallSampler {
 
     fn init(&mut self) {
         self.init = true;
-    }
-}
-
-struct StrictLargeSmallSampler {
-    items_small: Vec<[Vec2; 4]>,
-    items_large: Vec<[Vec2; 4]>,
-    rng: Pcg64Mcg,
-}
-
-impl StrictLargeSmallSampler {
-    fn new(seed: u128) -> Self {
-        let items_small = Vec::with_capacity(32);
-        let items_large = Vec::with_capacity(32);
-        let rng = Pcg64Mcg::new(seed);
-        Self {
-            items_small,
-            items_large,
-            rng,
-        }
-    }
-}
-
-impl Sampler<[Vec2; 4]> for StrictLargeSmallSampler {
-    fn push(&mut self, item: [Vec2; 4]) {
-        let p0 = item[0];
-        let p1 = item[1];
-        let p3 = item[3];
-
-        let v0 = p1 - p0;
-        let v1 = p3 - p0;
-        let norm0 = v0.norm2_sq();
-        let norm1 = v1.norm2_sq();
-
-        if (norm0 == 1 && norm1 == 1) || (norm0 == 2 && norm1 == 2) {
-            self.items_small.push(item);
-        } else {
-            self.items_large.push(item);
-        }
-    }
-
-    fn sample(&mut self) -> Option<[Vec2; 4]> {
-        let len_small = self.items_small.len();
-        let len_large = self.items_large.len();
-
-        if len_small > 0 {
-            let i = self.rng.gen_range(0, len_small);
-            Some(self.items_small.swap_remove(i))
-        } else if len_large > 0 {
-            let i = self.rng.gen_range(0, len_large);
-            Some(self.items_large.swap_remove(i))
-        } else {
-            None
-        }
-    }
-
-    fn clear(&mut self) {
-        self.items_small.clear();
-        self.items_large.clear();
-    }
-
-    fn init(&mut self) {
-        // do nothing
     }
 }
 
