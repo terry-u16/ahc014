@@ -83,7 +83,7 @@ macro_rules! skip_none {
 }
 
 mod bitboard {
-    use crate::vector::{Vec2, DIR_COUNT, UNITS};
+    use crate::vector::{Vec2, DIR_COUNT, UNITS, rot_cc};
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     struct Bitset {
@@ -158,6 +158,7 @@ mod bitboard {
         n: usize,
         points: [Vec<Bitset>; DIR_COUNT],
         edges: [Vec<Bitset>; DIR_COUNT / 2],
+        root_edges: Vec<u8>,
     }
 
     impl Board {
@@ -186,11 +187,23 @@ mod bitboard {
                 }
             }
 
-            Self { n, points, edges }
+            let root_edges = vec![0; n * n];
+
+            Self {
+                n,
+                points,
+                edges,
+                root_edges,
+            }
         }
 
         pub fn find_next(&self, v: Vec2, dir: usize) -> Option<Vec2> {
             unsafe {
+                let i = (v.y * self.n as i32 + v.x) as usize;
+                if (self.root_edges.get_unchecked(i) & (1 << dir)) > 0 {
+                    return None;
+                }
+
                 let p = self.points.get_unchecked(dir);
                 let v_rot = v.rot(dir, self.n);
                 let next = p
@@ -312,6 +325,28 @@ mod bitboard {
                 let edges = self.edges.get_unchecked_mut(dir);
                 edges.get_unchecked_mut(y0).unset_range(x0, x1);
                 edges.get_unchecked_mut(y1).unset_range(x0, x1);
+            }
+        }
+
+        pub fn set_root_edge2(&mut self, v: Vec2, dir: usize) {
+            let i = (v.y * self.n as i32 + v.x) as usize;
+            unsafe {
+                let e = self.root_edges.get_unchecked_mut(i);
+                debug_assert!((*e & (1 << dir)) == 0);
+                debug_assert!((*e & (1 << rot_cc(dir))) == 0);
+                *e ^= 1 << dir;
+                *e ^= 1 << rot_cc(dir);
+            }
+        }
+
+        pub fn unset_root_edge2(&mut self, v: Vec2, dir: usize) {
+            let i = (v.y * self.n as i32 + v.x) as usize;
+            unsafe {
+                let e = self.root_edges.get_unchecked_mut(i);
+                debug_assert!((*e & (1 << dir)) > 0);
+                debug_assert!((*e & (1 << rot_cc(dir))) > 0);
+                *e ^= 1 << dir;
+                *e ^= 1 << rot_cc(dir);
             }
         }
 
@@ -562,12 +597,18 @@ impl State {
 
             let p0 = *rectangle.get_unchecked(begin);
             let p1 = *rectangle.get_unchecked((begin + 1) & 3);
+            let p2 = *rectangle.get_unchecked((begin + 2) & 3);
             let p3 = *rectangle.get_unchecked((begin + 3) & 3);
 
             let width = p1.x - p0.x;
             let height = p3.y - p0.y;
             let dir = if p1.y - p0.y == 0 { 0 } else { 1 };
             let height_mul = if dir == 0 { 1 } else { 2 };
+
+            self.board.set_root_edge2(p0, dir);
+            self.board.set_root_edge2(p1, dir + 2);
+            self.board.set_root_edge2(p2, dir + 4);
+            self.board.set_root_edge2(p3, dir + 6);
 
             self.board
                 .connect_parallel(p0, width, height * height_mul, dir);
@@ -609,12 +650,18 @@ impl State {
 
             let p0 = *rectangle.get_unchecked(begin);
             let p1 = *rectangle.get_unchecked((begin + 1) & 3);
+            let p2 = *rectangle.get_unchecked((begin + 2) & 3);
             let p3 = *rectangle.get_unchecked((begin + 3) & 3);
 
             let width = p1.x - p0.x;
             let height = p3.y - p0.y;
             let dir = if p1.y - p0.y == 0 { 0 } else { 1 };
             let height_mul = if dir == 0 { 1 } else { 2 };
+
+            self.board.unset_root_edge2(p0, dir);
+            self.board.unset_root_edge2(p1, dir + 2);
+            self.board.unset_root_edge2(p2, dir + 4);
+            self.board.unset_root_edge2(p3, dir + 6);
 
             self.board
                 .disconnect_parallel(p0, width, height * height_mul, dir);
