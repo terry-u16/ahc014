@@ -100,13 +100,7 @@ mod bitboard {
             ((self.v >> i) & 1) > 0
         }
 
-        fn set(&mut self, i: u32) {
-            debug_assert!(((self.v >> i) & 1) == 0);
-            self.v ^= 1 << i;
-        }
-
-        fn unset(&mut self, i: u32) {
-            debug_assert!(((self.v >> i) & 1) > 0);
+        fn flip(&mut self, i: u32) {
             self.v ^= 1 << i;
         }
 
@@ -125,15 +119,8 @@ mod bitboard {
             (self.v & Self::get_range_mask(begin, end)) > 0
         }
 
-        fn set_range(&mut self, begin: u32, end: u32) {
-            debug_assert!(!self.contains_range(begin, end));
+        fn flip_range(&mut self, begin: u32, end: u32) {
             self.v ^= Self::get_range_mask(begin, end);
-        }
-
-        fn unset_range(&mut self, begin: u32, end: u32) {
-            let mask = Self::get_range_mask(begin, end);
-            debug_assert!((self.v & mask) == mask);
-            self.v ^= mask;
         }
 
         fn get_range_popcnt(&self, begin: u32, end: u32) -> u32 {
@@ -183,7 +170,7 @@ mod bitboard {
             for p in init_points.iter() {
                 for (dir, points) in points.iter_mut().enumerate() {
                     let p = p.rot(dir, n);
-                    points[p.y as usize].set(p.x as u32);
+                    points[p.y as usize].flip(p.x as u32);
                 }
             }
 
@@ -275,7 +262,7 @@ mod bitboard {
                     self.points
                         .get_unchecked_mut(dir)
                         .get_unchecked_mut(v.y as usize)
-                        .set(v.x as u32);
+                        .flip(v.x as u32);
                 }
             }
         }
@@ -287,7 +274,7 @@ mod bitboard {
                     self.points
                         .get_unchecked_mut(dir)
                         .get_unchecked_mut(v.y as usize)
-                        .unset(v.x as u32);
+                        .flip(v.x as u32);
                 }
             }
         }
@@ -302,7 +289,7 @@ mod bitboard {
             count as usize
         }
 
-        pub fn connect_parallel(&mut self, v0: Vec2, width: i32, height: i32, dir: usize) {
+        pub fn flip_parallel_edges(&mut self, v0: Vec2, width: i32, height: i32, dir: usize) {
             let v0 = v0.rot(dir, self.n);
             let y0 = v0.y as usize;
             let x0 = v0.x as u32;
@@ -310,21 +297,8 @@ mod bitboard {
             let x1 = x0 + width as u32;
             unsafe {
                 let edges = self.edges.get_unchecked_mut(dir);
-                edges.get_unchecked_mut(y0).set_range(x0, x1);
-                edges.get_unchecked_mut(y1).set_range(x0, x1);
-            }
-        }
-
-        pub fn disconnect_parallel(&mut self, v0: Vec2, width: i32, height: i32, dir: usize) {
-            let v0 = v0.rot(dir, self.n);
-            let y0 = v0.y as usize;
-            let x0 = v0.x as u32;
-            let y1 = (y0 as i32 + height) as usize;
-            let x1 = x0 + width as u32;
-            unsafe {
-                let edges = self.edges.get_unchecked_mut(dir);
-                edges.get_unchecked_mut(y0).unset_range(x0, x1);
-                edges.get_unchecked_mut(y1).unset_range(x0, x1);
+                edges.get_unchecked_mut(y0).flip_range(x0, x1);
+                edges.get_unchecked_mut(y1).flip_range(x0, x1);
             }
         }
 
@@ -404,14 +378,14 @@ mod bitboard {
         #[test]
         fn set() {
             let mut b = Bitset::new(1);
-            b.set(1);
+            b.flip(1);
             assert_eq!(b.v, 3);
         }
 
         #[test]
         fn unset() {
             let mut b = Bitset::new(3);
-            b.unset(1);
+            b.flip(1);
             assert_eq!(b.v, 1);
         }
 
@@ -443,14 +417,14 @@ mod bitboard {
         #[test]
         fn set_range() {
             let mut b = Bitset::new(1);
-            b.set_range(2, 4);
+            b.flip_range(2, 4);
             assert_eq!(b.v, 13);
         }
 
         #[test]
         fn unset_range() {
             let mut b = Bitset::new(13);
-            b.unset_range(2, 4);
+            b.flip_range(2, 4);
             assert_eq!(b.v, 1);
         }
     }
@@ -563,47 +537,7 @@ impl State {
             self.rectangles.push(rectangle.clone());
             self.score += input.get_weight(p);
 
-            let mut begin = 0;
-            let mut edges: [MaybeUninit<Vec2>; 4] = MaybeUninit::uninit().assume_init();
-
-            for (i, edge) in edges.iter_mut().enumerate() {
-                *edge = MaybeUninit::new(
-                    *rectangle.get_unchecked((i + 1) & 3) - *rectangle.get_unchecked(i),
-                );
-            }
-
-            let edges: [Vec2; 4] = std::mem::transmute(edges);
-
-            for i in 0..4 {
-                let p = edges.get_unchecked(i);
-                if p.x > 0 && p.y >= 0 {
-                    begin = i;
-                    break;
-                }
-            }
-
-            let p0 = *rectangle.get_unchecked(begin);
-            let p1 = *rectangle.get_unchecked((begin + 1) & 3);
-            let p2 = *rectangle.get_unchecked((begin + 2) & 3);
-            let p3 = *rectangle.get_unchecked((begin + 3) & 3);
-
-            let width = p1.x - p0.x;
-            let height = p3.y - p0.y;
-            let dir = if p1.y - p0.y == 0 { 0 } else { 1 };
-            let height_mul = if dir == 0 { 1 } else { 2 };
-
-            self.board.flip_root_edge2(p0, dir);
-            self.board.flip_root_edge2(p1, dir + 2);
-            self.board.flip_root_edge2(p2, dir + 4);
-            self.board.flip_root_edge2(p3, dir + 6);
-
-            self.board
-                .connect_parallel(p0, width, height * height_mul, dir);
-
-            let (width, height) = (height, width);
-            let dir = rot_cc(dir);
-            self.board
-                .connect_parallel(p1, width, height * height_mul, dir);
+            self.flip_rectangle(rectangle);
         }
     }
 
@@ -616,6 +550,12 @@ impl State {
             // self.rectangles.push(rectangle.clone());
             self.score -= input.get_weight(p);
 
+            self.flip_rectangle(rectangle);
+        }
+    }
+
+    fn flip_rectangle(&mut self, rectangle: &[Vec2; 4]) {
+        unsafe {
             let mut begin = 0;
             let mut edges: [MaybeUninit<Vec2>; 4] = MaybeUninit::uninit().assume_init();
 
@@ -651,12 +591,11 @@ impl State {
             self.board.flip_root_edge2(p3, dir + 6);
 
             self.board
-                .disconnect_parallel(p0, width, height * height_mul, dir);
-
+                .flip_parallel_edges(p0, width, height * height_mul, dir);
             let (width, height) = (height, width);
             let dir = rot_cc(dir);
             self.board
-                .disconnect_parallel(p1, width, height * height_mul, dir);
+                .flip_parallel_edges(p1, width, height * height_mul, dir);
         }
     }
 
