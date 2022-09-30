@@ -827,8 +827,8 @@ fn try_break_rectangles(
     let y1 = y0 + size;
     let count = solution.board.get_range_popcnt(x0, y0, x1, y1);
 
-    let threshold = ((solution.rectangles.len() + input.m) / 3).min(30);
-    if (solution.rectangles.len() != 0 && count == 0) || count >= threshold {
+    const THRESHOLD: usize = 30;
+    if (solution.rectangles.len() != 0 && count == 0) || count >= THRESHOLD {
         return None;
     }
 
