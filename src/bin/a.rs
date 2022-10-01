@@ -944,6 +944,8 @@ mod greedy {
                     state.remove(input, &rect);
                 }
 
+                // ここは嘘な上素直にsamplerをcloneするより遅いのだが、こちらの方がスコアが上がる。
+                // なぜ……。
                 while let Some(rect) = USED_IN_GREEDY.pop() {
                     sampler.push(rect);
                 }
