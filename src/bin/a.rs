@@ -1,17 +1,10 @@
-use std::{
-    mem::{swap, MaybeUninit},
-    time::Instant,
-};
+use std::{mem::MaybeUninit, time::Instant};
 
 use bitboard::Board;
-#[allow(unused_imports)]
 use proconio::*;
-#[allow(unused_imports)]
 use rand::prelude::*;
-use rand_pcg::Pcg64Mcg;
-use vector::DIR_COUNT;
 
-use crate::vector::{rot_c, rot_cc, Vec2};
+use crate::vector::{rot_cc, Vec2};
 type Rectangle = [Vec2; 4];
 
 #[allow(unused_macros)]
@@ -744,7 +737,7 @@ fn annealing(input: &Input, initial_solution: State, duration: f64, params: &Par
     const NOT_IMPROVED_THRESHOLD: f64 = 0.1;
     let mut last_improved = 0.0;
 
-    let mut ls_sampler = LargeSmallSampler::new(rng.gen());
+    let mut ls_sampler = greedy::LargeSmallSampler::new(rng.gen());
 
     loop {
         all_iter += 1;
@@ -758,13 +751,8 @@ fn annealing(input: &Input, initial_solution: State, duration: f64, params: &Par
         let temp = f64::powf(temp0, 1.0 - time) * f64::powf(temp1, time);
 
         // 変形
-        let will_removed = skip_none!(try_break_rectangles(input, &solution, &mut rng));
-
-        if solution.rectangles.len() != 0 && will_removed.iter().all(|b| !b) {
-            continue;
-        }
-
-        let state = random_greedy(input, &will_removed, &solution, &mut ls_sampler);
+        let will_removed = skip_none!(greedy::try_break_rectangles(input, &solution, &mut rng));
+        let state = greedy::random_greedy(input, &will_removed, &solution, &mut ls_sampler);
 
         // スコア計算
         let score_diff = state.calc_annealing_score(input) - solution.calc_annealing_score(input);
@@ -816,338 +804,353 @@ fn annealing(input: &Input, initial_solution: State, duration: f64, params: &Par
     best_solution
 }
 
-fn try_break_rectangles(
-    input: &Input,
-    solution: &State,
-    rng: &mut rand_pcg::Pcg64Mcg,
-) -> Option<Vec<bool>> {
-    let size = rng.gen_range(1, input.n / 2);
-    let x0 = rng.gen_range(0, input.n - size + 1);
-    let y0 = rng.gen_range(0, input.n - size + 1);
-    let x1 = x0 + size;
-    let y1 = y0 + size;
-    let count = solution.board.get_range_popcnt(x0, y0, x1, y1);
+mod greedy {
+    use rand::prelude::*;
+    use rand_pcg::Pcg64Mcg;
+    use std::mem::swap;
 
-    const THRESHOLD: usize = 30;
-    if (solution.rectangles.len() != 0 && count == 0) || count >= THRESHOLD {
-        return None;
-    }
+    use crate::{
+        vector::{rot_c, rot_cc, Vec2, DIR_COUNT},
+        Input, Rectangle, State,
+    };
 
-    let will_removed = solution
-        .rectangles
-        .iter()
-        .map(|rect| {
-            let p = rect[0];
-            let x = p.x as usize;
-            let y = p.y as usize;
-            x0 <= x && x < x1 && y0 <= y && y < y1
-        })
-        .collect();
+    pub(crate) fn try_break_rectangles(
+        input: &Input,
+        solution: &State,
+        rng: &mut rand_pcg::Pcg64Mcg,
+    ) -> Option<Vec<bool>> {
+        let size = rng.gen_range(1, input.n / 2);
+        let x0 = rng.gen_range(0, input.n - size + 1);
+        let y0 = rng.gen_range(0, input.n - size + 1);
+        let x1 = x0 + size;
+        let y1 = y0 + size;
+        let count = solution.board.get_range_popcnt(x0, y0, x1, y1);
 
-    Some(will_removed)
-}
+        const THRESHOLD: usize = 30;
+        if (solution.rectangles.len() != 0 && count == 0) || count >= THRESHOLD {
+            return None;
+        }
 
-static mut USED_IN_GREEDY: Vec<Rectangle> = Vec::new();
-static mut BEST_RECT_IN_GREEDY: Vec<Rectangle> = Vec::new();
+        let will_removed = solution
+            .rectangles
+            .iter()
+            .map(|rect| {
+                let p = rect[0];
+                let x = p.x as usize;
+                let y = p.y as usize;
+                x0 <= x && x < x1 && y0 <= y && y < y1
+            })
+            .collect::<Vec<_>>();
 
-fn random_greedy(
-    input: &Input,
-    will_removed: &[bool],
-    state: &State,
-    sampler: &mut impl Sampler<Rectangle>,
-) -> State {
-    // 削除予定の矩形・それに依存する矩形を削除
-    sampler.clear();
-    let mut state = state.clone();
-    let mut old_rectangles = Vec::with_capacity(state.rectangles.len() * 6 / 5);
-    swap(&mut state.rectangles, &mut old_rectangles);
-
-    for (&remove, rectangle) in will_removed.iter().zip(old_rectangles.iter()) {
-        let remove = remove || rectangle[1..].iter().any(|v| !state.board.is_occupied(*v));
-        if remove {
-            state.remove(input, rectangle);
+        if solution.rectangles.len() != 0 && will_removed.iter().all(|b| !b) {
+            None
         } else {
-            state.rectangles.push(*rectangle);
+            Some(will_removed)
         }
     }
 
-    let mut next_p = [None; DIR_COUNT];
+    static mut USED_IN_GREEDY: Vec<Rectangle> = Vec::new();
+    static mut BEST_RECT_IN_GREEDY: Vec<Rectangle> = Vec::new();
 
-    for p2 in state.board.iter_points() {
-        for (dir, next) in next_p.iter_mut().enumerate() {
-            *next = state.board.find_next(p2, dir);
-        }
+    pub(crate) fn random_greedy(
+        input: &Input,
+        will_removed: &[bool],
+        state: &State,
+        sampler: &mut impl Sampler<Rectangle>,
+    ) -> State {
+        // 削除予定の矩形・それに依存する矩形を削除
+        sampler.clear();
+        let mut state = state.clone();
+        let mut old_rectangles = Vec::with_capacity(state.rectangles.len() * 6 / 5);
+        swap(&mut state.rectangles, &mut old_rectangles);
 
-        for dir in 0..8 {
-            let p1 = skip_none!(next_p[dir]);
-            let p3 = skip_none!(next_p[rot_c(dir)]);
-            let p0 = p1 + (p3 - p2);
-
-            try_add_candidate(input, &state, p0, p1, p2, p3, sampler)
-        }
-    }
-
-    // 複数回再構築をトライする
-    const TRIAL_COUNT: usize = 3;
-    let init_len = state.rectangles.len();
-    let mut best_score = state.calc_normalized_score(input);
-    let mut no_apply = false;
-
-    unsafe {
-        BEST_RECT_IN_GREEDY.clear();
-        USED_IN_GREEDY.clear();
-
-        for trial in 0..TRIAL_COUNT {
-            sampler.init();
-
-            loop {
-                let rectangle = if let Some(rect) = sampler.sample() {
-                    rect
-                } else {
-                    break;
-                };
-
-                USED_IN_GREEDY.push(rectangle);
-
-                if !state.can_apply(&rectangle) {
-                    continue;
-                }
-
-                state.apply(input, &rectangle);
-
-                for (p0, p1, p2, p3) in NextPointIterator::new(&state, rectangle) {
-                    try_add_candidate(input, &state, p0, p1, p2, p3, sampler)
-                }
-            }
-
-            if chmax!(best_score, state.calc_normalized_score(input)) {
-                if trial == TRIAL_COUNT - 1 {
-                    no_apply = true;
-                    break;
-                }
-
-                BEST_RECT_IN_GREEDY.clear();
-                for &rect in state.rectangles[init_len..].iter() {
-                    BEST_RECT_IN_GREEDY.push(rect);
-                }
-            }
-
-            let count = state.rectangles.len() - init_len;
-
-            // ロールバックする
-            // 初期状態から到達できないゴミが残ってしまうが、state.can_apply()で弾かれる
-            // 前回選ばれた頂点は再度選ばれやすくなってしまうが、許容
-            for _ in 0..count {
-                let rect = state.rectangles.pop().unwrap();
-                state.remove(input, &rect);
-            }
-
-            while let Some(rect) = USED_IN_GREEDY.pop() {
-                sampler.push(rect);
-            }
-        }
-
-        if !no_apply {
-            for rect in BEST_RECT_IN_GREEDY.iter() {
-                state.apply(input, rect);
-            }
-        }
-    }
-
-    state
-}
-
-fn try_add_candidate(
-    input: &Input,
-    state: &State,
-    p0: Vec2,
-    p1: Vec2,
-    p2: Vec2,
-    p3: Vec2,
-    sampler: &mut impl Sampler<Rectangle>,
-) {
-    if !p0.in_map(input.n)
-        || state.board.is_occupied(p0)
-        || !state.board.can_connect(p1, p0)
-        || !state.board.can_connect(p3, p0)
-    {
-        return;
-    }
-
-    let rectangle = [p0, p1, p2, p3];
-    sampler.push(rectangle);
-}
-
-struct NextPointIterator<'a> {
-    rectangle: Rectangle,
-    next: [Option<Vec2>; DIR_COUNT],
-    dir: usize,
-    phase: usize,
-    state: &'a State,
-}
-
-impl<'a> NextPointIterator<'a> {
-    fn new(state: &'a State, rectangle: Rectangle) -> Self {
-        let mut next = [None; DIR_COUNT];
-
-        for (dir, next) in next.iter_mut().enumerate() {
-            *next = state.board.find_next(rectangle[0], dir);
-        }
-
-        let dir = 0;
-        let phase = 0;
-
-        Self {
-            rectangle,
-            next,
-            dir,
-            phase,
-            state,
-        }
-    }
-}
-
-impl<'a> Iterator for NextPointIterator<'a> {
-    type Item = (Vec2, Vec2, Vec2, Vec2);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.phase == 0 {
-            let p1 = self.rectangle[0];
-
-            while self.dir < DIR_COUNT {
-                let dir = self.dir;
-                self.dir += 1;
-
-                let p2 = skip_none!(self.next[dir]);
-                let p3 = skip_none!(self.state.board.find_next(p2, rot_cc(dir)));
-                let p0 = p1 + (p3 - p2);
-                return Some((p0, p1, p2, p3));
-            }
-
-            self.phase += 1;
-            self.dir = 0;
-        }
-
-        if self.phase == 1 {
-            let p2 = self.rectangle[0];
-
-            while self.dir < DIR_COUNT {
-                let dir = self.dir;
-                self.dir += 1;
-
-                let p1 = skip_none!(self.next[dir]);
-                let p3 = skip_none!(self.next[rot_c(dir)]);
-                let p0 = p1 + (p3 - p2);
-                return Some((p0, p1, p2, p3));
-            }
-
-            self.phase += 1;
-            self.dir = 0;
-        }
-
-        if self.phase == 2 {
-            let p3 = self.rectangle[0];
-
-            while self.dir < DIR_COUNT {
-                let dir = self.dir;
-                self.dir += 1;
-
-                let p2 = skip_none!(self.next[dir]);
-                let p1 = skip_none!(self.state.board.find_next(p2, rot_c(dir)));
-                let p0 = p1 + (p3 - p2);
-                return Some((p0, p1, p2, p3));
-            }
-        }
-
-        None
-    }
-}
-
-trait Sampler<T> {
-    fn push(&mut self, item: T);
-    fn sample(&mut self) -> Option<T>;
-    fn clear(&mut self);
-    fn init(&mut self);
-}
-
-struct LargeSmallSampler {
-    items_small: Vec<Rectangle>,
-    items_large: Vec<Rectangle>,
-    init: bool,
-    rng: Pcg64Mcg,
-}
-
-impl LargeSmallSampler {
-    fn new(seed: u128) -> Self {
-        let items_small = Vec::with_capacity(32);
-        let items_large = Vec::with_capacity(32);
-        let init = true;
-        let rng = Pcg64Mcg::new(seed);
-        Self {
-            items_small,
-            items_large,
-            init,
-            rng,
-        }
-    }
-}
-
-impl Sampler<Rectangle> for LargeSmallSampler {
-    fn push(&mut self, item: Rectangle) {
-        let p0 = item[0];
-        let p1 = item[1];
-        let p3 = item[3];
-
-        let v0 = p1 - p0;
-        let v1 = p3 - p0;
-        let norm0 = v0.norm2_sq();
-        let norm1 = v1.norm2_sq();
-
-        if (norm0 == 1 && norm1 == 1) || (norm0 == 2 && norm1 == 2) {
-            self.items_small.push(item);
-        } else {
-            self.items_large.push(item);
-        }
-    }
-
-    fn sample(&mut self) -> Option<Rectangle> {
-        let len_small = self.items_small.len();
-        let len_large = self.items_large.len();
-
-        if self.init {
-            self.init = false;
-
-            if len_small + len_large == 0 {
-                return None;
-            }
-
-            let i = self.rng.gen_range(0, len_small + len_large);
-
-            if i < len_small {
-                return Some(self.items_small.swap_remove(i));
+        for (&remove, rectangle) in will_removed.iter().zip(old_rectangles.iter()) {
+            let remove = remove || rectangle[1..].iter().any(|v| !state.board.is_occupied(*v));
+            if remove {
+                state.remove(input, rectangle);
             } else {
-                return Some(self.items_large.swap_remove(i - len_small));
+                state.rectangles.push(*rectangle);
             }
         }
 
-        if len_small > 0 {
-            let i = self.rng.gen_range(0, len_small);
-            Some(self.items_small.swap_remove(i))
-        } else if len_large > 0 {
-            let i = self.rng.gen_range(0, len_large);
-            Some(self.items_large.swap_remove(i))
-        } else {
+        let mut next_p = [None; DIR_COUNT];
+
+        for p2 in state.board.iter_points() {
+            for (dir, next) in next_p.iter_mut().enumerate() {
+                *next = state.board.find_next(p2, dir);
+            }
+
+            for dir in 0..8 {
+                let p1 = skip_none!(next_p[dir]);
+                let p3 = skip_none!(next_p[rot_c(dir)]);
+                let p0 = p1 + (p3 - p2);
+
+                try_add_candidate(input, &state, p0, p1, p2, p3, sampler)
+            }
+        }
+
+        // 複数回再構築をトライする
+        const TRIAL_COUNT: usize = 3;
+        let init_len = state.rectangles.len();
+        let mut best_score = state.calc_normalized_score(input);
+        let mut no_apply = false;
+
+        unsafe {
+            BEST_RECT_IN_GREEDY.clear();
+            USED_IN_GREEDY.clear();
+
+            for trial in 0..TRIAL_COUNT {
+                sampler.init();
+
+                loop {
+                    let rectangle = if let Some(rect) = sampler.sample() {
+                        rect
+                    } else {
+                        break;
+                    };
+
+                    USED_IN_GREEDY.push(rectangle);
+
+                    if !state.can_apply(&rectangle) {
+                        continue;
+                    }
+
+                    state.apply(input, &rectangle);
+
+                    for (p0, p1, p2, p3) in NextPointIterator::new(&state, rectangle) {
+                        try_add_candidate(input, &state, p0, p1, p2, p3, sampler)
+                    }
+                }
+
+                if chmax!(best_score, state.calc_normalized_score(input)) {
+                    if trial == TRIAL_COUNT - 1 {
+                        no_apply = true;
+                        break;
+                    }
+
+                    BEST_RECT_IN_GREEDY.clear();
+                    for &rect in state.rectangles[init_len..].iter() {
+                        BEST_RECT_IN_GREEDY.push(rect);
+                    }
+                }
+
+                let count = state.rectangles.len() - init_len;
+
+                // ロールバックする
+                // 初期状態から到達できないゴミが残ってしまうが、state.can_apply()で弾かれる
+                // 前回選ばれた頂点は再度選ばれやすくなってしまうが、許容
+                for _ in 0..count {
+                    let rect = state.rectangles.pop().unwrap();
+                    state.remove(input, &rect);
+                }
+
+                while let Some(rect) = USED_IN_GREEDY.pop() {
+                    sampler.push(rect);
+                }
+            }
+
+            if !no_apply {
+                for rect in BEST_RECT_IN_GREEDY.iter() {
+                    state.apply(input, rect);
+                }
+            }
+        }
+
+        state
+    }
+
+    fn try_add_candidate(
+        input: &Input,
+        state: &State,
+        p0: Vec2,
+        p1: Vec2,
+        p2: Vec2,
+        p3: Vec2,
+        sampler: &mut impl Sampler<Rectangle>,
+    ) {
+        if !p0.in_map(input.n)
+            || state.board.is_occupied(p0)
+            || !state.board.can_connect(p1, p0)
+            || !state.board.can_connect(p3, p0)
+        {
+            return;
+        }
+
+        let rectangle = [p0, p1, p2, p3];
+        sampler.push(rectangle);
+    }
+
+    struct NextPointIterator<'a> {
+        rectangle: Rectangle,
+        next: [Option<Vec2>; DIR_COUNT],
+        dir: usize,
+        phase: usize,
+        state: &'a State,
+    }
+
+    impl<'a> NextPointIterator<'a> {
+        fn new(state: &'a State, rectangle: Rectangle) -> Self {
+            let mut next = [None; DIR_COUNT];
+
+            for (dir, next) in next.iter_mut().enumerate() {
+                *next = state.board.find_next(rectangle[0], dir);
+            }
+
+            let dir = 0;
+            let phase = 0;
+
+            Self {
+                rectangle,
+                next,
+                dir,
+                phase,
+                state,
+            }
+        }
+    }
+
+    impl<'a> Iterator for NextPointIterator<'a> {
+        type Item = (Vec2, Vec2, Vec2, Vec2);
+
+        fn next(&mut self) -> Option<Self::Item> {
+            if self.phase == 0 {
+                let p1 = self.rectangle[0];
+
+                while self.dir < DIR_COUNT {
+                    let dir = self.dir;
+                    self.dir += 1;
+
+                    let p2 = skip_none!(self.next[dir]);
+                    let p3 = skip_none!(self.state.board.find_next(p2, rot_cc(dir)));
+                    let p0 = p1 + (p3 - p2);
+                    return Some((p0, p1, p2, p3));
+                }
+
+                self.phase += 1;
+                self.dir = 0;
+            }
+
+            if self.phase == 1 {
+                let p2 = self.rectangle[0];
+
+                while self.dir < DIR_COUNT {
+                    let dir = self.dir;
+                    self.dir += 1;
+
+                    let p1 = skip_none!(self.next[dir]);
+                    let p3 = skip_none!(self.next[rot_c(dir)]);
+                    let p0 = p1 + (p3 - p2);
+                    return Some((p0, p1, p2, p3));
+                }
+
+                self.phase += 1;
+                self.dir = 0;
+            }
+
+            if self.phase == 2 {
+                let p3 = self.rectangle[0];
+
+                while self.dir < DIR_COUNT {
+                    let dir = self.dir;
+                    self.dir += 1;
+
+                    let p2 = skip_none!(self.next[dir]);
+                    let p1 = skip_none!(self.state.board.find_next(p2, rot_c(dir)));
+                    let p0 = p1 + (p3 - p2);
+                    return Some((p0, p1, p2, p3));
+                }
+            }
+
             None
         }
     }
 
-    fn clear(&mut self) {
-        self.items_small.clear();
-        self.items_large.clear();
+    pub(crate) trait Sampler<T> {
+        fn push(&mut self, item: T);
+        fn sample(&mut self) -> Option<T>;
+        fn clear(&mut self);
+        fn init(&mut self);
     }
 
-    fn init(&mut self) {
-        self.init = true;
+    pub(crate) struct LargeSmallSampler {
+        items_small: Vec<Rectangle>,
+        items_large: Vec<Rectangle>,
+        init: bool,
+        rng: Pcg64Mcg,
+    }
+
+    impl LargeSmallSampler {
+        pub(crate) fn new(seed: u128) -> Self {
+            let items_small = Vec::with_capacity(32);
+            let items_large = Vec::with_capacity(32);
+            let init = true;
+            let rng = Pcg64Mcg::new(seed);
+            Self {
+                items_small,
+                items_large,
+                init,
+                rng,
+            }
+        }
+    }
+
+    impl Sampler<Rectangle> for LargeSmallSampler {
+        fn push(&mut self, item: Rectangle) {
+            let p0 = item[0];
+            let p1 = item[1];
+            let p3 = item[3];
+
+            let v0 = p1 - p0;
+            let v1 = p3 - p0;
+            let norm0 = v0.norm2_sq();
+            let norm1 = v1.norm2_sq();
+
+            if (norm0 == 1 && norm1 == 1) || (norm0 == 2 && norm1 == 2) {
+                self.items_small.push(item);
+            } else {
+                self.items_large.push(item);
+            }
+        }
+
+        fn sample(&mut self) -> Option<Rectangle> {
+            let len_small = self.items_small.len();
+            let len_large = self.items_large.len();
+
+            if self.init {
+                self.init = false;
+
+                if len_small + len_large == 0 {
+                    return None;
+                }
+
+                let i = self.rng.gen_range(0, len_small + len_large);
+
+                if i < len_small {
+                    return Some(self.items_small.swap_remove(i));
+                } else {
+                    return Some(self.items_large.swap_remove(i - len_small));
+                }
+            }
+
+            if len_small > 0 {
+                let i = self.rng.gen_range(0, len_small);
+                Some(self.items_small.swap_remove(i))
+            } else if len_large > 0 {
+                let i = self.rng.gen_range(0, len_large);
+                Some(self.items_large.swap_remove(i))
+            } else {
+                None
+            }
+        }
+
+        fn clear(&mut self) {
+            self.items_small.clear();
+            self.items_large.clear();
+        }
+
+        fn init(&mut self) {
+            self.init = true;
+        }
     }
 }
 
