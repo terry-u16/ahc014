@@ -10,7 +10,7 @@ def read_input_params(dir: str) -> pd.DataFrame:
     n_list = []
     m_list = []
 
-    for seed in range(10000):
+    for seed in range(50000):
         index.append(seed)
         path = os.path.join(dir, f"{seed:04}.txt")
         with open(path) as f:
