@@ -13,7 +13,7 @@ import loader
 
 # %%
 TRAINING_DATA_RATIO = 0.75
-BATCH_SIZE = 4096
+BATCH_SIZE = 1024
 
 # %%
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -23,17 +23,23 @@ device
 df = loader.load_df()
 
 # %%
+
+
 def normalize_n(x: pd.DataFrame) -> pd.DataFrame:
     return (x - 31) / 30
+
 
 def normalize_density(x: pd.DataFrame) -> pd.DataFrame:
     return x * 10
 
+
 def normalize_temp(x: pd.DataFrame) -> pd.DataFrame:
     return np.log10(x)
-    
+
+
 def normalize_score(x: pd.DataFrame) -> pd.DataFrame:
     return x / 1e6
+
 
 # %%
 df["N"] = normalize_n(df["N"])
@@ -74,8 +80,22 @@ model = model.to(device)
 LEARNING_RATE = 0.01
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 # %%
+
+
+class MSLELoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.mse = nn.MSELoss()
+
+    def forward(self, pred, actual):
+        return self.mse(torch.log(pred + 1e-6), torch.log(actual + 1e-6))
+
+
 criterion = nn.MSELoss()
+
 # %%
+
+
 def train_step(train_X: torch.Tensor, train_y: torch.Tensor) -> float:
     model.train()
 
@@ -83,28 +103,33 @@ def train_step(train_X: torch.Tensor, train_y: torch.Tensor) -> float:
     train_y = train_y.to(device)
     pred_y = model(train_X)
     loss = criterion(pred_y, train_y)
-    
+
     optimizer.zero_grad()
     loss.backward()
-    optimizer.step() 
+    optimizer.step()
 
     return loss.item()  # item()=Pythonの数値
+
 
 def valid_step(valid_X: torch.Tensor, valid_y: torch.Tensor) -> float:
     model.eval()
 
     valid_X = valid_X.to(device)
     valid_y = valid_y.to(device)
-    pred_y = model(valid_X) # 出力結果
+    pred_y = model(valid_X)  # 出力結果
     loss = criterion(pred_y, valid_y)
 
     # 損失と正解数をタプルで返す
     return loss.item()
 # %%
+
+
 def init_parameters(layer: nn.Linear):
     if type(layer) == nn.Linear:
-        nn.init.xavier_uniform_(layer.weight) # 重みを「一様分布のランダム値」に初期化
+        nn.init.xavier_uniform_(layer.weight)  # 重みを「一様分布のランダム値」に初期化
         layer.bias.data.fill_(0.0)            # バイアスを「0」に初期化
+
+
 # %%
 # 学習の前にパラメーター（重みやバイアス）を初期化する
 model.apply(init_parameters)
@@ -125,7 +150,7 @@ valid_history = []
 for epoch in range(EPOCHS):
     # forループ内で使う変数と、エポックごとの値リセット
     total_loss = 0.0     # 「訓練」時における累計「損失値」
-    total_val_loss = 0.0 # 「評価」時における累計「損失値」
+    total_val_loss = 0.0  # 「評価」時における累計「損失値」
     total_train = 0      # 「訓練」時における累計「データ数」
     total_valid = 0      # 「評価」時における累計「データ数」
 
@@ -134,7 +159,7 @@ for epoch in range(EPOCHS):
 
         total_loss += loss
         total_train += len(train_y)
-            
+
     for valid_X, valid_y in loader_valid:
         val_loss = valid_step(valid_X, valid_y)
 
@@ -158,17 +183,19 @@ current_time = datetime.datetime.now()
 model_path = f"./data/models/{TIMESTAMP}.pth"
 torch.save(model.cpu().state_dict(), model_path)
 # %%
-n = X_valid[0].numpy()[0]
-density = X_valid[0].numpy()[1]
+n = X_train[0].numpy()[0]
+density = X_train[0].numpy()[1]
+print(f"{n} {density}")
 
-for seed in range(6):
-    print(f"seed: {seed}")
-    for i in range(10):
-        for j in range(10):
-            temp0 = i * 0.1 + np.log10(5)
-            temp1 = j * 0.1
-            x = torch.from_numpy(np.array([n, density, temp0, temp1])).float().to(device)
-            score = model.to(device)(x).cpu().detach().numpy()
-            print(f"{np.power(10, temp0):.2f} {np.power(10, temp1):.2f} {score*1000000}")
+for i in range(11):
+    for j in range(11):
+        temp0 = np.log10(5 * np.power(10.0, i / 10))
+        temp1 = np.log10(np.power(10.0, j / 10))
+
+        print(f"{temp0} {temp1}")
+        x = torch.from_numpy(
+            np.array([n, density, temp0, temp1])).float().to(device)
+        score = model.to(device)(x).cpu().detach().numpy()
+        print(f"{np.power(10, temp0):.2f} {np.power(10, temp1):.2f} {score*1000000}")
 
 # %%
