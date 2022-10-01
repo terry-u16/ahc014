@@ -12,6 +12,7 @@ use rand_pcg::Pcg64Mcg;
 use vector::DIR_COUNT;
 
 use crate::vector::{rot_c, rot_cc, Vec2};
+type Rectangle = [Vec2; 4];
 
 #[allow(unused_macros)]
 macro_rules! chmin {
@@ -493,7 +494,7 @@ impl Input {
 #[derive(Debug, Clone)]
 struct State {
     board: Board,
-    rectangles: Vec<[Vec2; 4]>,
+    rectangles: Vec<Rectangle>,
     score: i32,
 }
 
@@ -511,7 +512,7 @@ impl State {
         }
     }
 
-    fn can_apply(&self, rectangle: &[Vec2; 4]) -> bool {
+    fn can_apply(&self, rectangle: &Rectangle) -> bool {
         for (i, v) in rectangle.iter().enumerate() {
             if self.board.is_occupied(*v) ^ (i != 0) {
                 return false;
@@ -530,7 +531,7 @@ impl State {
         true
     }
 
-    fn apply(&mut self, input: &Input, rectangle: &[Vec2; 4]) {
+    fn apply(&mut self, input: &Input, rectangle: &Rectangle) {
         unsafe {
             let p = *rectangle.get_unchecked(0);
             self.board.add_point(p);
@@ -541,7 +542,7 @@ impl State {
         }
     }
 
-    fn remove(&mut self, input: &Input, rectangle: &[Vec2; 4]) {
+    fn remove(&mut self, input: &Input, rectangle: &Rectangle) {
         unsafe {
             let p = *rectangle.get_unchecked(0);
             self.board.remove_point(p);
@@ -554,7 +555,7 @@ impl State {
         }
     }
 
-    fn flip_rectangle(&mut self, rectangle: &[Vec2; 4]) {
+    fn flip_rectangle(&mut self, rectangle: &Rectangle) {
         unsafe {
             let mut begin = 0;
             let mut edges: [MaybeUninit<Vec2>; 4] = MaybeUninit::uninit().assume_init();
@@ -565,7 +566,7 @@ impl State {
                 );
             }
 
-            let edges: [Vec2; 4] = std::mem::transmute(edges);
+            let edges: Rectangle = std::mem::transmute(edges);
 
             for i in 0..4 {
                 let p = edges.get_unchecked(i);
@@ -614,11 +615,11 @@ impl State {
 
 #[derive(Debug, Clone)]
 struct Output {
-    rectangles: Vec<[Vec2; 4]>,
+    rectangles: Vec<Rectangle>,
 }
 
 impl Output {
-    fn new(rectangles: Vec<[Vec2; 4]>) -> Self {
+    fn new(rectangles: Vec<Rectangle>) -> Self {
         Self { rectangles }
     }
 }
@@ -846,14 +847,14 @@ fn try_break_rectangles(
     Some(will_removed)
 }
 
-static mut USED_IN_GREEDY: Vec<[Vec2; 4]> = Vec::new();
-static mut BEST_RECT_IN_GREEDY: Vec<[Vec2; 4]> = Vec::new();
+static mut USED_IN_GREEDY: Vec<Rectangle> = Vec::new();
+static mut BEST_RECT_IN_GREEDY: Vec<Rectangle> = Vec::new();
 
 fn random_greedy(
     input: &Input,
     will_removed: &[bool],
     state: &State,
-    sampler: &mut impl Sampler<[Vec2; 4]>,
+    sampler: &mut impl Sampler<Rectangle>,
 ) -> State {
     // 削除予定の矩形・それに依存する矩形を削除
     sampler.clear();
@@ -963,7 +964,7 @@ fn try_add_candidate(
     p1: Vec2,
     p2: Vec2,
     p3: Vec2,
-    sampler: &mut impl Sampler<[Vec2; 4]>,
+    sampler: &mut impl Sampler<Rectangle>,
 ) {
     if !p0.in_map(input.n)
         || state.board.is_occupied(p0)
@@ -978,7 +979,7 @@ fn try_add_candidate(
 }
 
 struct NextPointIterator<'a> {
-    rectangle: [Vec2; 4],
+    rectangle: Rectangle,
     next: [Option<Vec2>; DIR_COUNT],
     dir: usize,
     phase: usize,
@@ -986,7 +987,7 @@ struct NextPointIterator<'a> {
 }
 
 impl<'a> NextPointIterator<'a> {
-    fn new(state: &'a State, rectangle: [Vec2; 4]) -> Self {
+    fn new(state: &'a State, rectangle: Rectangle) -> Self {
         let mut next = [None; DIR_COUNT];
 
         for (dir, next) in next.iter_mut().enumerate() {
@@ -1070,8 +1071,8 @@ trait Sampler<T> {
 }
 
 struct LargeSmallSampler {
-    items_small: Vec<[Vec2; 4]>,
-    items_large: Vec<[Vec2; 4]>,
+    items_small: Vec<Rectangle>,
+    items_large: Vec<Rectangle>,
     init: bool,
     rng: Pcg64Mcg,
 }
@@ -1091,8 +1092,8 @@ impl LargeSmallSampler {
     }
 }
 
-impl Sampler<[Vec2; 4]> for LargeSmallSampler {
-    fn push(&mut self, item: [Vec2; 4]) {
+impl Sampler<Rectangle> for LargeSmallSampler {
+    fn push(&mut self, item: Rectangle) {
         let p0 = item[0];
         let p1 = item[1];
         let p3 = item[3];
@@ -1109,7 +1110,7 @@ impl Sampler<[Vec2; 4]> for LargeSmallSampler {
         }
     }
 
-    fn sample(&mut self) -> Option<[Vec2; 4]> {
+    fn sample(&mut self) -> Option<Rectangle> {
         let len_small = self.items_small.len();
         let len_large = self.items_large.len();
 
