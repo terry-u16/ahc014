@@ -827,7 +827,7 @@ mod greedy {
         let count = solution.board.get_range_popcnt(x0, y0, x1, y1);
 
         const THRESHOLD: usize = 30;
-        if (solution.rectangles.len() != 0 && count == 0) || count >= THRESHOLD {
+        if count >= THRESHOLD {
             return None;
         }
 
