@@ -9,6 +9,7 @@ use proconio::*;
 #[allow(unused_imports)]
 use rand::prelude::*;
 use rand_pcg::Pcg64Mcg;
+use rclistt::RcList;
 use vector::DIR_COUNT;
 
 use crate::vector::{rot_c, rot_cc, Vec2};
@@ -764,7 +765,7 @@ fn annealing(input: &Input, initial_solution: State, duration: f64, params: &Par
             continue;
         }
 
-        let state = random_greedy(input, &will_removed, &solution, &mut ls_sampler);
+        let state = random_greedy(input, &will_removed, &solution, &mut ls_sampler, &mut rng);
 
         // スコア計算
         let score_diff = state.calc_annealing_score(input) - solution.calc_annealing_score(input);
@@ -855,12 +856,18 @@ fn random_greedy(
     will_removed: &[bool],
     state: &State,
     sampler: &mut impl Sampler<Rectangle>,
+    rng: &mut Pcg64Mcg,
 ) -> State {
     // 削除予定の矩形・それに依存する矩形を削除
     sampler.clear();
     let mut state = state.clone();
     let mut old_rectangles = Vec::with_capacity(state.rectangles.len() * 6 / 5);
     swap(&mut state.rectangles, &mut old_rectangles);
+
+    unsafe {
+        SMALL_CANDIDATES.clear();
+        LARGE_CANDIDATES.clear();
+    }
 
     for (&remove, rectangle) in will_removed.iter().zip(old_rectangles.iter()) {
         let remove = remove || rectangle[1..].iter().any(|v| !state.board.is_occupied(*v));
@@ -883,7 +890,7 @@ fn random_greedy(
             let p3 = skip_none!(next_p[rot_c(dir)]);
             let p0 = p1 + (p3 - p2);
 
-            try_add_candidate(input, &state, p0, p1, p2, p3, sampler)
+            try_add_candidate(input, &state, p0, p1, p2, p3);
         }
     }
 
@@ -893,79 +900,224 @@ fn random_greedy(
     let mut best_score = state.calc_normalized_score(input);
     let mut no_apply = false;
 
+    let mut best_op = RcList::new();
+    let since = Instant::now();
+    let mut best_score = state.calc_normalized_score(input);
+    let mut iter = 0;
+    let mut s = state.clone();
+
     unsafe {
-        BEST_RECT_IN_GREEDY.clear();
-        USED_IN_GREEDY.clear();
+        SMALL_CANDIDATES.shuffle(rng);
+        LARGE_CANDIDATES.shuffle(rng);
+    }
 
-        for trial in 0..TRIAL_COUNT {
-            sampler.init();
+    dfs(
+        input,
+        &mut s,
+        &mut best_score,
+        &mut best_op,
+        RcList::new(),
+        0,
+        &mut iter,
+        rng,
+        &since,
+    );
 
-            loop {
-                let rectangle = if let Some(rect) = sampler.sample() {
-                    rect
-                } else {
-                    break;
-                };
-
-                USED_IN_GREEDY.push(rectangle);
-
-                if !state.can_apply(&rectangle) {
-                    continue;
-                }
-
-                state.apply(input, &rectangle);
-
-                for (p0, p1, p2, p3) in NextPointIterator::new(&state, rectangle) {
-                    try_add_candidate(input, &state, p0, p1, p2, p3, sampler)
-                }
-            }
-
-            if chmax!(best_score, state.calc_normalized_score(input)) {
-                if trial == TRIAL_COUNT - 1 {
-                    no_apply = true;
-                    break;
-                }
-
-                BEST_RECT_IN_GREEDY.clear();
-                for &rect in state.rectangles[init_len..].iter() {
-                    BEST_RECT_IN_GREEDY.push(rect);
-                }
-            }
-
-            let count = state.rectangles.len() - init_len;
-
-            // ロールバックする
-            // 初期状態から到達できないゴミが残ってしまうが、state.can_apply()で弾かれる
-            // 前回選ばれた頂点は再度選ばれやすくなってしまうが、許容
-            for _ in 0..count {
-                let rect = state.rectangles.pop().unwrap();
-                state.remove(input, &rect);
-            }
-
-            while let Some(rect) = USED_IN_GREEDY.pop() {
-                sampler.push(rect);
-            }
-        }
-
-        if !no_apply {
-            for rect in BEST_RECT_IN_GREEDY.iter() {
-                state.apply(input, rect);
-            }
-        }
+    for op in best_op.to_vec() {
+        state.apply(input, &op);
     }
 
     state
 }
 
-fn try_add_candidate(
+static mut SMALL_CANDIDATES: Vec<Rectangle> = Vec::new();
+static mut LARGE_CANDIDATES: Vec<Rectangle> = Vec::new();
+static mut ADDED_HISTORY: Vec<usize> = Vec::new();
+static mut REMOVED_HISTORY: Vec<(usize, Rectangle)> = Vec::new();
+
+fn dfs(
     input: &Input,
-    state: &State,
-    p0: Vec2,
-    p1: Vec2,
-    p2: Vec2,
-    p3: Vec2,
-    sampler: &mut impl Sampler<Rectangle>,
-) {
+    state: &mut State,
+    best_score: &mut i32,
+    best_op: &mut RcList<Rectangle>,
+    op: RcList<Rectangle>,
+    depth: u32,
+    iter: &mut u32,
+    rng: &mut Pcg64Mcg,
+    since: &Instant,
+) -> bool {
+    *iter += 1;
+
+    if *iter % 100 == 0 {
+        if (Instant::now() - *since).as_micros() >= 100 {
+            return true;
+        }
+    }
+
+    if chmax!(*best_score, state.calc_normalized_score(input)) {
+        *best_op = op.clone();
+    }
+
+    let mut time_up = false;
+
+    unsafe {
+        let removed_history_small = REMOVED_HISTORY.len();
+
+        for i in (0..SMALL_CANDIDATES.len()).rev() {
+            if !state.can_apply(&SMALL_CANDIDATES[i]) {
+                let rect = SMALL_CANDIDATES.swap_remove(i);
+                REMOVED_HISTORY.push((i, rect));
+            }
+        }
+
+        let removed_history_large = REMOVED_HISTORY.len();
+
+        for i in (0..LARGE_CANDIDATES.len()).rev() {
+            if !state.can_apply(&LARGE_CANDIDATES[i]) {
+                let rect = LARGE_CANDIDATES.swap_remove(i);
+                REMOVED_HISTORY.push((i, rect));
+            }
+        }
+
+        let added_history_start = ADDED_HISTORY.len();
+
+        if depth == 0 && rng.gen_bool(0.5) {
+            for i in 0..LARGE_CANDIDATES.len() {
+                let rectangle = LARGE_CANDIDATES.swap_remove(i);
+
+                if state.can_apply(&rectangle) {
+                    state.apply(input, &rectangle);
+
+                    for (p0, p1, p2, p3) in NextPointIterator::new(&state, rectangle) {
+                        try_add_candidate(input, state, p0, p1, p2, p3);
+                    }
+
+                    time_up |= dfs(
+                        input,
+                        state,
+                        best_score,
+                        best_op,
+                        op.push(rectangle),
+                        depth + 1,
+                        iter,
+                        rng,
+                        since,
+                    );
+
+                    while ADDED_HISTORY.len() > added_history_start {
+                        let j = ADDED_HISTORY.pop().unwrap();
+                        LARGE_CANDIDATES.swap_remove(j);
+                    }
+
+                    state.remove(input, &rectangle);
+                }
+
+                LARGE_CANDIDATES.push(rectangle);
+                LARGE_CANDIDATES.swap(i, LARGE_CANDIDATES.len() - 1);
+
+                if time_up {
+                    break;
+                }
+            }
+        }
+
+        if !time_up {
+            for i in 0..SMALL_CANDIDATES.len() {
+                let rectangle = SMALL_CANDIDATES.swap_remove(i);
+
+                if state.can_apply(&rectangle) {
+                    state.apply(input, &rectangle);
+
+                    for (p0, p1, p2, p3) in NextPointIterator::new(&state, rectangle) {
+                        try_add_candidate(input, state, p0, p1, p2, p3);
+                    }
+
+                    time_up |= dfs(
+                        input,
+                        state,
+                        best_score,
+                        best_op,
+                        op.push(rectangle),
+                        depth + 1,
+                        iter,
+                        rng,
+                        since,
+                    );
+
+                    while ADDED_HISTORY.len() > added_history_start {
+                        let j = ADDED_HISTORY.pop().unwrap();
+                        SMALL_CANDIDATES.swap_remove(j);
+                    }
+
+                    state.remove(input, &rectangle);
+                }
+
+                SMALL_CANDIDATES.push(rectangle);
+                SMALL_CANDIDATES.swap(i, SMALL_CANDIDATES.len() - 1);
+
+                if time_up {
+                    break;
+                }
+            }
+        }
+
+        if !time_up {
+            for i in 0..LARGE_CANDIDATES.len() {
+                let rectangle = LARGE_CANDIDATES.swap_remove(i);
+
+                if state.can_apply(&rectangle) {
+                    state.apply(input, &rectangle);
+
+                    for (p0, p1, p2, p3) in NextPointIterator::new(&state, rectangle) {
+                        try_add_candidate(input, state, p0, p1, p2, p3);
+                    }
+
+                    time_up |= dfs(
+                        input,
+                        state,
+                        best_score,
+                        best_op,
+                        op.push(rectangle),
+                        depth + 1,
+                        iter,
+                        rng,
+                        since,
+                    );
+
+                    while ADDED_HISTORY.len() > added_history_start {
+                        let j = ADDED_HISTORY.pop().unwrap();
+                        LARGE_CANDIDATES.swap_remove(j);
+                    }
+
+                    state.remove(input, &rectangle);
+                }
+
+                LARGE_CANDIDATES.push(rectangle);
+                LARGE_CANDIDATES.swap(i, LARGE_CANDIDATES.len() - 1);
+
+                if time_up {
+                    break;
+                }
+            }
+        }
+
+        while REMOVED_HISTORY.len() > removed_history_large {
+            let (j, rect) = REMOVED_HISTORY.pop().unwrap();
+            LARGE_CANDIDATES.push(rect);
+            LARGE_CANDIDATES.swap(j, LARGE_CANDIDATES.len() - 1);
+        }
+
+        while REMOVED_HISTORY.len() > removed_history_small {
+            let (j, rect) = REMOVED_HISTORY.pop().unwrap();
+            SMALL_CANDIDATES.push(rect);
+            SMALL_CANDIDATES.swap(j, SMALL_CANDIDATES.len() - 1);
+        }
+    }
+
+    return time_up;
+}
+
+fn try_add_candidate(input: &Input, state: &State, p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2) {
     if !p0.in_map(input.n)
         || state.board.is_occupied(p0)
         || !state.board.can_connect(p1, p0)
@@ -975,7 +1127,22 @@ fn try_add_candidate(
     }
 
     let rectangle = [p0, p1, p2, p3];
-    sampler.push(rectangle);
+    let p0 = rectangle[0];
+    let p1 = rectangle[1];
+    let p3 = rectangle[3];
+
+    let v0 = p1 - p0;
+    let v1 = p3 - p0;
+    let norm0 = v0.norm2_sq();
+    let norm1 = v1.norm2_sq();
+
+    unsafe {
+        if (norm0 == 1 && norm1 == 1) || (norm0 == 2 && norm1 == 2) {
+            SMALL_CANDIDATES.push(rectangle);
+        } else {
+            LARGE_CANDIDATES.push(rectangle);
+        }
+    }
 }
 
 struct NextPointIterator<'a> {
@@ -1537,4 +1704,45 @@ mod neural_network {
     fn mul3(x: f64) -> f64 {
         x * 3.0
     }
+}
+
+mod rclistt {
+    // RcList
+    // Copyright (c) 2018 hatoo, released under MIT License
+    // https://github.com/hatoo/competitive-rust-snippets/blob/master/LICENSE-MIT
+    use std::rc::Rc;
+
+    #[derive(Debug)]
+    struct RcListInner<T> {
+        parent: RcList<T>,
+        value: T,
+    }
+
+    /// O(1) clone, O(1) push
+    #[derive(Clone, Debug)]
+    pub struct RcList<T>(Option<Rc<RcListInner<T>>>);
+
+    impl<T: Clone> RcList<T> {
+        pub fn new() -> Self {
+            RcList(None)
+        }
+
+        #[inline]
+        pub fn push(&self, value: T) -> RcList<T> {
+            RcList(Some(Rc::new(RcListInner {
+                parent: self.clone(),
+                value,
+            })))
+        }
+
+        pub fn to_vec(&self) -> Vec<T> {
+            if let Some(ref inner) = self.0 {
+                let mut p = inner.parent.to_vec();
+                p.push(inner.value.clone());
+                p
+            } else {
+                Vec::new()
+            }
+        }
+    } // RcList ends here
 }
